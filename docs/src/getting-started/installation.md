@@ -13,7 +13,7 @@ Oxisol is written in **100% pure, safe Rust** (`#![forbid(unsafe_code)]`) with *
 ## Standard Release Build (Workstation / Laptop)
 
 ```bash
-git clone https://github.com/oxisol/oxisol.git
+git clone https://github.com/vieiramesquita/oxisol.git
 cd oxisol
 cargo build --release -p oxisol-cli
 ```

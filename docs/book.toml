@@ -13,8 +13,8 @@ create-missing = false
 default-theme = "coal"
 preferred-dark-theme = "coal"
 mathjax-support = true
-git-repository-url = "https://github.com/oxisol/oxisol"
-edit-url-template = "https://github.com/oxisol/oxisol/edit/main/docs/{path}"
+git-repository-url = "https://github.com/vieiramesquita/oxisol"
+edit-url-template = "https://github.com/vieiramesquita/oxisol/edit/main/docs/{path}"
 site-url = "/oxisol/"
 
 [output.html.fold]

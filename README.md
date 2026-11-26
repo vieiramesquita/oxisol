@@ -3,6 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
 [![Safe Rust](https://img.shields.io/badge/unsafe-forbidden-brightgreen.svg)](crates/oxisol-core/src/lib.rs)
+[![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-06b6d4.svg)](https://vieiramesquita.github.io/oxisol/)
 
 **Oxisol** is an **open-source, clean-room, MIT-licensed *CENTURY-like* biogeochemical ecosystem engine** written from scratch in pure, safe Rust (`#![forbid(unsafe_code)]`) and engineered for 2020s multi-core CPUs, **AMD EPYC + 512 GB RAM** servers, and interactive web workflows.
 

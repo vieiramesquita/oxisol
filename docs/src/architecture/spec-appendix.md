@@ -1,6 +1,6 @@
 # Formal Clean-Room Specification Appendix
 
-For researchers auditing exact equation forms, parameter definitions, and documented V4.0 → V4.5 deltas, the formal 7-part mathematical specification resides directly in [`docs/spec/`](https://github.com/oxisol/oxisol/tree/main/docs/spec):
+For researchers auditing exact equation forms, parameter definitions, and documented V4.0 → V4.5 deltas, the formal 7-part mathematical specification resides directly in [`docs/spec/`](https://github.com/vieiramesquita/oxisol/tree/main/docs/spec):
 
 1. **`01_pools_and_mass_balance.md`** — Pool state definitions, isotopic `(unlab, lab)` representation, and boundary conservation identities.
 2. **`02_hydrology_and_soil_water.md`** — Linacre PET, snowpack melt/drainage, Probert runoff, Rawls/Gupta-Larson pedotransfer equations, and solute leaching.

@@ -1,6 +1,6 @@
 # Oxisol vs. Legacy CENTURY — Performance & Scientific Benchmarks
 
-> **TL;DR:** Across **3,168 continental US grid cells simulated for 1,000 years (38.0 million cell-months)**, **Oxisol** — a 100% clean-room, MIT-licensed, zero-`unsafe` Rust engine — achieves **$R^2 = 0.9756$** ($r = 0.9877$, median relative difference **6.08%**) on Total Soil Organic Carbon (`SOMSC`) against archived **CENTURY V4.5 (VEMAP)** outputs while running **2.17× faster on a single core** and **14.22× faster on an 8-core / 16-thread host** — finishing a millennium-scale continental run in **10.87 seconds**.
+> **TL;DR:** Across **3,168 continental US grid cells simulated for 1,000 years (38.0 million cell-months)** using the public VEMAP Phase 1/2 bioclimatic benchmark ([Kittel et al., 1995](https://doi.org/10.2307/2845986); [VEMAP Members, 1995](https://doi.org/10.1029/95GB02746); [Kittel et al., 2004](https://doi.org/10.3354/cr027151)), **Oxisol** — a 100% clean-room, MIT-licensed, zero-`unsafe` Rust engine — achieves **$R^2 = 0.9756$** ($r = 0.9877$, median relative difference **6.08%**) on Total Soil Organic Carbon (`SOMSC`) against archived **CENTURY V4.5** outputs ([Parton et al., 2005](https://doi.org/10.3334/ORNLDAAC/820)) while running **2.17× faster on a single core** and **14.22× faster on an 8-core / 16-thread host** — finishing a millennium-scale continental run in **10.87 seconds**.
 
 ---
 
@@ -93,3 +93,29 @@ Beyond speed and open-source licensing, **`CompatibilityProfile::ScientificClean
 | **Transient Cursor Bug** | Static NetCDF time cursor failed to reset across cells on partial (<99 yr) runs | Per-cell deterministic indexing across arbitrary time windows |
 | **Hemisphere Phenology** | Northern-Hemisphere-only calendar checks for deciduous leaf drop | Native **Northern & Southern Hemisphere** deciduous abscission (e.g. Cerrado/Amazonia) |
 | **Working Precision & Safety** | `REAL*4` (`f32`) with ignored underflows and raw C pointer flowstacks | Generic `f64` / `f32`, `#![forbid(unsafe_code)]`, exact `< 1e-10` mass-balance auditing |
+
+---
+
+## 5. Benchmark Provenance & Scientific References
+
+### Evaluation Protocol
+- **Spatial Domain & Forcing:** 0.5° conterminous US grid (`48 × 115` grid, `3,168` active land cells across 17 vegetation biomes) forced by VEMAP Phase 1 mean monthly climatology and soil texture ([Kittel et al., 1995](https://doi.org/10.2307/2845986); [VEMAP Members, 1995](https://doi.org/10.1029/95GB02746)) for the 1,000-year equilibrium spinup, and VEMAP Phase 2 historical monthly weather (`1895–1993`, [Kittel et al., 2004](https://doi.org/10.3354/cr027151)) for the 99-year transient benchmark.
+- **Reference Equilibrium Archive:** Archived 1,000-year CENTURY Version 4 (VEMAP 1995) `site.nc` outputs distributed via ORNL DAAC Dataset #820 ([Parton et al., 2005](https://doi.org/10.3334/ORNLDAAC/820)). Effective volumetric rock fractions were algebraically recovered from archived `afiel` / Rawls (1982) pedotransfer ratios (`afiel0`/`awilt0` parity $R^2 = 1.0000$, `MaxRel = 2.62e-7`) because the auxiliary `rock`/`zminrl` grids were omitted from the public archive.
+- **Clean-Room Methodology:** All Oxisol equations derive exclusively from published peer-reviewed literature and technical documentation ([Parton et al., 1987](https://doi.org/10.2136/sssaj1987.03615995005100050015x), [1988](https://doi.org/10.1007/BF02180320), [1993](https://doi.org/10.1029/93GB02042); Metherell et al., 1993; [Linacre, 1977](https://doi.org/10.1016/0002-1571(77)90007-3); [Rawls et al., 1982](https://doi.org/10.13031/2013.33720); [Ryan, 1991](https://doi.org/10.2307/1941808); [Probert et al., 1995](https://doi.org/10.1071/EA9950941)); archived outputs are used solely for black-box numerical verification.
+
+### Peer-Reviewed References
+
+1. **Parton, W. J., Schimel, D. S., Cole, C. V., & Ojima, D. S. (1987).** Analysis of Factors Controlling Soil Organic Matter Levels in Great Plains Grasslands. *Soil Science Society of America Journal*, 51(5), 1173–1179. https://doi.org/10.2136/sssaj1987.03615995005100050015x
+2. **Parton, W. J., Stewart, J. W. B., & Cole, C. V. (1988).** Dynamics of C, N, P and S in grassland soils: a model. *Biogeochemistry*, 5, 109–131. https://doi.org/10.1007/BF02180320
+3. **Parton, W. J., Scurlock, J. M. O., Ojima, D. S., Gilmanov, T. G., et al. (1993).** Observations and modeling of biomass and soil organic matter dynamics for the grassland biome worldwide. *Global Biogeochemical Cycles*, 7(4), 785–809. https://doi.org/10.1029/93GB02042
+4. **Metherell, A. K., Harding, L. A., Cole, C. V., & Parton, W. J. (1993).** *CENTURY Soil Organic Matter Model Environment. Technical Documentation. Agroecosystem Version 4.0.* Great Plains Systems Research Unit (GPSR) Technical Report No. 4, USDA-ARS, Fort Collins, CO.
+5. **VEMAP Members (1995).** Vegetation/ecosystem modeling and analysis project: Comparing biogeography and biogeochemistry models in a continental-scale study of terrestrial ecosystem responses to climate change and CO₂ doubling. *Global Biogeochemical Cycles*, 9(4), 407–437. https://doi.org/10.1029/95GB02746
+6. **Kittel, T. G. F., Rosenbloom, N. A., Painter, T. H., & Schimel, D. S. (1995).** The VEMAP Integrated Database for Modelling United States Ecosystem/Vegetation Sensitivity to Climate Change. *Journal of Biogeography*, 22(4/5), 857–862. https://doi.org/10.2307/2845986
+7. **Kittel, T. G. F., Rosenbloom, N. A., Royle, J. A., Daly, C., Gibson, W. P., et al. (2004).** VEMAP Phase 2 bioclimatic database. I. Gridded historical (20th century) climate for modeling ecosystem dynamics across the conterminous USA. *Climate Research*, 27, 151–170. https://doi.org/10.3354/cr027151
+8. **Parton, W. J., Ojima, D. S., & Schimel, D. S. (2005).** CENTURY: Modeling Ecosystem Responses to Climate Change, Version 4 (VEMAP 1995). *ORNL Distributed Active Archive Center (DAAC)*. https://doi.org/10.3334/ORNLDAAC/820
+9. **Linacre, E. T. (1977).** A simple formula for estimating evaporation rates in various climates, using temperature data alone. *Agricultural Meteorology*, 18(6), 409–424. https://doi.org/10.1016/0002-1571(77)90007-3
+10. **Gupta, S. C., & Larson, W. E. (1979).** Estimating soil water retention characteristics from particle size distribution, organic matter percent, and bulk density. *Water Resources Research*, 15(6), 1633–1635. https://doi.org/10.1029/WR015i006p01633
+11. **Rawls, W. J., Brakensiek, D. L., & Saxton, K. E. (1982).** Estimation of Soil Water Properties. *Transactions of the ASAE*, 25(5), 1316–1320. https://doi.org/10.13031/2013.33720
+12. **Ryan, M. G. (1991).** Effects of Climate Change on Plant Respiration. *Ecological Applications*, 1(2), 157–167. https://doi.org/10.2307/1941808
+13. **Probert, M. E., Keating, B. A., Thompson, J. P., & Parton, W. J. (1995).** Modelling water, nitrogen, and crop yield for a long-term fallow management experiment. *Australian Journal of Experimental Agriculture*, 35(7), 941–950. https://doi.org/10.1071/EA9950941
+14. **European Commission — Joint Research Centre (JRC).** MIDAS Policy Model Inventory: *CENTURY agroecosystem dynamic model* (licensing & EU 1 km² policy context). https://web.jrc.ec.europa.eu/policy-model-inventory/explore/models/model-century/

@@ -1,131 +1,107 @@
 # Oxisol
 
+**An open-source, high-speed soil carbon and ecosystem simulator — built for modern climate, agriculture, and landscape science.**
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
-[![Safe Rust](https://img.shields.io/badge/unsafe-forbidden-brightgreen.svg)](crates/oxisol-core/src/lib.rs)
+[![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![Docs](https://img.shields.io/badge/Docs-vieiramesquita.github.io%2Foxisol-06b6d4.svg)](https://vieiramesquita.github.io/oxisol/)
 
-**[Documentation Portal (`mdBook`)](https://vieiramesquita.github.io/oxisol/) · [Rust API Reference (`rustdoc`)](https://vieiramesquita.github.io/oxisol/api/oxisol_core/index.html) · [Benchmarks & Parity Report](BENCHMARKS.md) · [Spatial Raster Examples](examples/spatial_raster/README.md) · [Glossary & Acronyms](https://vieiramesquita.github.io/oxisol/glossary.html)**
+**[Documentation Portal](https://vieiramesquita.github.io/oxisol/) · [Spatial Raster Examples](examples/spatial_raster/README.md) · [Glossary & Acronyms](https://vieiramesquita.github.io/oxisol/glossary.html) · [Benchmarks & Validation](BENCHMARKS.md) · [API Reference](https://vieiramesquita.github.io/oxisol/api/oxisol_core/index.html)**
 
 ---
 
-## The Story Behind Oxisol
+## Why Oxisol?
 
-Soils are the largest terrestrial reservoir of organic carbon on Earth — storing more carbon than the atmosphere and all living vegetation combined ([Scharlemann et al., 2014](https://doi.org/10.4155/cmt.13.77)). Small shifts in how soil organic matter decomposes or accumulates under warming, changing rainfall, deforestation, or agricultural management can tip regional ecosystems from carbon sinks into carbon sources.
+Soils hold more organic carbon than the atmosphere and all living vegetation combined ([Scharlemann et al., 2014](https://doi.org/10.4155/cmt.13.77)). Understanding how that carbon responds to warming, rainfall shifts, grazing, fire, deforestation, or regenerative agriculture is central to climate science and land-use policy.
 
-In the late 1980s, William J. Parton and colleagues at Colorado State University set out to understand what governs soil organic matter across the North American Great Plains. Their framework — the **CENTURY** model ([Parton et al., 1987](https://doi.org/10.2136/sssaj1987.03615995005100050015x); [Parton et al., 1988](https://doi.org/10.1007/BF02180320); [Parton et al., 1993](https://doi.org/10.1029/93GB02042); Metherell et al., 1993) — partitioned soil carbon and nutrients into *active*, *slow*, and *passive* pools turning over on annual, decadal, and centennial timescales. Over the following decades, CENTURY became one of the most influential biogeochemical models in Earth system science, powering landmark continental intercomparisons such as **VEMAP** ([VEMAP Members, 1995](https://doi.org/10.1029/95GB02746); [Parton et al., 2005](https://doi.org/10.3334/ORNLDAAC/820)) and informing high-resolution continental policy inventories such as the European Commission's 1 km² agricultural soil carbon assessments ([EC JRC MIDAS](https://web.jrc.ec.europa.eu/policy-model-inventory/explore/models/model-century/)).
+In the late 1980s, William J. Parton and colleagues pioneered the **CENTURY** model ([Parton et al., 1987](https://doi.org/10.2136/sssaj1987.03615995005100050015x); [Parton et al., 1993](https://doi.org/10.1029/93GB02042)) — a landmark framework that became one of the most cited tools in Earth system science. Yet nearly forty years later, while the science was always open in peer-reviewed journals, the original software remained locked inside closed, 1990s single-threaded code.
 
-Yet nearly forty years later, a strange paradox remained: **the science had always been published openly in peer-reviewed journals, while the reference code stayed locked behind a proprietary, non-free 1990s Fortran 77/C distribution** (*All Rights Reserved* / non-open-source per [EC JRC MIDAS](https://web.jrc.ec.europa.eu/policy-model-inventory/explore/models/model-century/)), tied to single-threaded execution, mutable global `COMMON` blocks, Northern-Hemisphere phenology assumptions, and legacy numerical quirks.
+**Foundational climate and soil science belongs in the open.**
 
-**Foundational climate and soil carbon science should not stay trapped inside closed-source 1990s code.**
-
-That is why **Oxisol** was created. Named after **Oxisols** (*Latossolos*) — the deeply weathered, iron-oxide-rich tropical soils of the Amazon and Cerrado whose **rust** hue mirrors the **Rust** language — **Oxisol** is an **open-source, clean-room, MIT-licensed *CENTURY-like* biogeochemical ecosystem engine** built from first principles of the published scientific literature:
-
-- **100% Safe, Pure Rust (`#![forbid(unsafe_code)]`):** Zero C/Fortran runtime dependencies, deterministic memory-safe parallelism, and strict `< 1e-10 g/m²` C/N/P/S mass-conservation auditing in `f64`.
-- **Scientifically Validated at Continental Scale:** Reproduces archived VEMAP CENTURY V4.5 equilibrium soil organic carbon across **3,168 cells × 1,000 years** at **$R^2 = 0.9756$** ($r = 0.9877$, median relative difference **6.08%**) — while fixing legacy bugs and adding native **Southern Hemisphere** deciduous phenology.
-- **Engineered for Modern Servers & Interactive Science:** Runs **2.17× faster than `gfortran -O2` on a single core**, **14.22× faster on 8C/16T** (a full 38-million cell-month continental millennium in **10.87 seconds**), and ships with a zero-dependency embedded web workbench (**Oxisol Studio**) and REST API in a single binary.
+Named after **Oxisols** (*Latossolos*) — the deeply weathered, iron-rich tropical soils of the Amazon and Cerrado whose rust-red color echoes the **Rust** language — **Oxisol** is an independent, open-source (MIT) *CENTURY-like* ecosystem engine built from scratch from the published scientific literature.
 
 ---
 
-## Key Highlights
+## What You Can Do
 
-- **Complete CENTURY-like Biogeochemical Core (`oxisol-core`, `#![forbid(unsafe_code)]`):**
-  - Full **Carbon, Nitrogen, Phosphorus, and Sulfur** cycling (`ElementMode::CarbonNitrogen`, `CarbonNitrogenPhosphorus`, `FullCnps`) plus **C-14 / C-13 isotope tracking** (`IsotopeMode`).
-  - **10 Modular Subsystems:** Linacre (1977) PET & astronomical daylength, multi-layer soil hydrology & solute leaching, biomass/snow-insulated soil temperature, CO₂ physiological response, 4-substep litter/wood/SOM1–3 decomposition, mineralization/volatilization, grassland/crop growth, forest/savanna dynamics with **Northern & Southern Hemisphere deciduous phenology**, inorganic P & S geochemistry, and all **9 management disturbances** (`CULT`, `FERT`, `FIRE`, `GRAZ`, `HARV`, `IRRI`, `OMAD`, `TREM`, `EROD`) with $O(1)$ pre-compiled schedules.
-  - **Exact Mass Conservation:** Stack-allocated `FlowLedger<F>` (with automatic overflow spill) and `< 1e-10 g/m²` C/N/P/S conservation auditing in `f64`.
-  - **Explicit Profiles:** `CompatibilityProfile::ScientificClean` (`f64`, default) and `CompatibilityProfile::VemapV45Parity` (`f32`, historical VEMAP V4.5 audit mode).
-- **Single-Binary Embedded Web UI & REST API (`oxisol-web` / `oxisol serve`):**
-  - **Oxisol Studio** ships inside the compiled `oxisol` binary with **zero Node.js or CDN runtime dependencies** — run locally or on a headless high-performance server over an SSH tunnel.
-  - Bilingual **EN / PT-BR** interface with live **`Mg C/ha` (default) ↔ `g C/m²`** unit switcher and **4 workspaces**: the **Scenario Lab** (8 calibrated presets defaulting to Brazilian Cerrado *Urochloa brizantha / Panicum maximum* tropical pasture, live latitude Earth globe, thermal/hydrological sliders, 12-month climograph, pH litmus strip, and **multi-depth `0–20 cm` / `0–30 cm` IPCC / `0–100 cm` Deep Profile** SOC), **Spatial Grid & HPC Explorer**, **LULC & Raster Engine (GeoTIFF / COG via [`terrio`](https://github.com/opengeos/terrio))** (full 41-class **MapBiomas Brasil Collection 11** & ESA WorldCover, target modeling resolution, `--only-classes` filter, strip-tiled laptop-to-HPC execution, and 9 DEFLATE-compressed COGs in `Mg C/ha`), and **REST API & Docs**.
-  - Ready-to-run spatial raster workflows, sample GeoTIFF generator, Python API script, and Google Earth Engine export script live in **[`examples/spatial_raster/`](examples/spatial_raster/README.md)**.
-- **100% Pure-Rust Geospatial & Biogeochemical I/O (`oxisol-io`):**
-  - Native parsers for `.100`, `.sch`, `.v2` ASCII rasters, `co2.dat`, pure-Rust NetCDF-3 Classic & 64-bit Offset reader/writer, `site.nc` I/O, lossless JSON checkpoints, and pure-Rust **GeoTIFF / Cloud-Optimized GeoTIFF (COG) / NetCDF** I/O via [`terrio`](https://github.com/opengeos/terrio) (zero `libgdal` dependency).
-- **Built for POWERFUL Servers (`oxisol-grid`):**
-  - 64-byte cache-line-aligned `CellState<f64>` (~5.8 KiB, L1d-resident), zero shared mutable state (`Arc<RawBiomeParams>`), lock-free `rayon` chunked parallelism, and portable SIMD (`wide::f32x8` / `f64x4`).
-
----
-
-## Workspace Layout
-
-```text
-oxisol/
-├── crates/
-│   ├── oxisol-core/           # Biogeochemical engine (#![forbid(unsafe_code)], f32/f64, FlowLedger)
-│   ├── oxisol-io/             # Pure-Rust .100, .sch, .v2, co2.dat, NetCDF-3, checkpoints, VEMAP loader
-│   ├── oxisol-grid/           # Rayon multi-core runner + biome-grouped portable SIMD + Criterion benches
-│   ├── oxisol-web/            # Axum REST API + embedded Oxisol Studio SPA (EN / PT-BR)
-│   └── oxisol-cli/            # `oxisol` CLI (`serve`, `run`, `validate`, `bench`)
-├── docs/
-│   ├── book.toml              # mdBook documentation portal (MathJax enabled)
-│   ├── src/                   # Full User Guide, Scientific Reference, HPC & REST API docs
-│   └── spec/                  # Formal 7-part clean-room mathematical specification
-├── LICENSE                    # MIT License
-└── .github/workflows/         # Cross-platform CI (`ci.yml`) + GitHub Pages (`docs.yml`)
-```
-
----
-
-## Oxisol vs. Legacy CENTURY — Benchmarks & Scientific Parity
-
-> **Full report & 17-biome breakdown:** see [`BENCHMARKS.md`](BENCHMARKS.md).
-
-![Oxisol vs. Legacy CENTURY Throughput Benchmark](docs/assets/benchmark_throughput.svg)
-
-Full continental US VEMAP spinup (**3,168 cells × 1,000 years = 38.0 million cell-months**) and 99-year historical transient run (**1895–1993** from lossless checkpoint with `pptT3.nc`/`tnT3.nc`/`txT3.nc` + `co2.dat`):
-
-| Engine / Mode | Precision | Threads | Wall Time | Throughput | Speedup vs. Legacy |
-|---|---:|---:|---:|---:|---:|
-| Legacy 1990s Fortran/C (`gfortran -O2`) | `f32` | 1 | 154.5 s *(extrapolated)* | 20,500 cell-yr/s | 1.00× |
-| `oxisol` Serial (`run_grid_serial`) | `f32` | 1 | ~71.2 s | **44,495 cell-yr/s** | **2.17×** |
-| `oxisol` Parallel (`rayon`, `VemapV45Parity`) | `f32` | 16 | **10.87 s** | **291,420 cell-yr/s** (`3.50M cell-mo/s`) | **14.22×** |
-| `oxisol` Parallel (`rayon`, `ScientificClean`) | `f64` | 16 | **12.34 s** | **256,840 cell-yr/s** (`3.08M cell-mo/s`) | **12.53×** |
-| `oxisol` Transient (`1895–1993`, 99 yr) | `f64` | 16 | **1.19 s** | **264,148 cell-yr/s** (`3.17M cell-mo/s`) | — |
-| `oxisol-grid` SIMD `f32x8` SOM kernel | `f32` | 1 | — | **8.88M cell-yr/s** (`106.59M cell-mo/s`) | — |
-
-On production servers, compile with `RUSTFLAGS="-C target-cpu=native"` and pass `--threads <N> --chunk-size 32`.
-
----
-
-## Continental Validation Summary (`R² = 0.9756` across 3,168 Cells × 1,000 yr)
-
-![Oxisol vs. CENTURY V4.5 Scientific Parity Across 17 Biomes](docs/assets/benchmark_parity.svg)
-
-- **Tier A (3,168 cells × 1,000 yr vs. archived CENTURY V4.5 `site.nc`):**
-  - **Total SOM (`somsc`):** **`4,134.9` vs. `4,231.8 g C/m²`** (**$r = 0.9877$, $R^2 = 0.9756$**, `-2.29%` mean diff, median rel diff **`6.08%`**)
-  - **Slow SOM (`som2c`):** **`2,380.1` vs. `2,474.9 g C/m²`** (**$r = 0.9889$, $R^2 = 0.9779$**)
-  - **Passive SOM (`som3c`):** **`1,635.3` vs. `1,636.9 g C/m²`** (**$r = 0.9864$, $R^2 = 0.9731$**, **`-0.09%`** mean diff)
-  - **Active SOM (`som1c_soil`):** **`119.5` vs. `120.0 g C/m²`** (**$r = 0.9763$, $R^2 = 0.9531$**, **`-0.38%`** mean diff)
-  - **Forest Wood (`rlwodc`):** **`3,806.0` vs. `3,656.9 g C/m²`** (**$r = 0.9786$, $R^2 = 0.9576$**)
-  - **Surface Mineral N & Soil Water:** `minerl_n0` **`0.609` vs. `0.616 g N/m²`** (`-1.14%`), `asmos0` **`3.436` vs. `3.397 cm`** (**`1.52%`** median diff).
-- **Tier B Perturbations & Invariants:** Head-to-head isolated cell checks match quantitatively on **`FIRE H` (`0.99×`)**, **`FERT A + OMAD M` (`0.95×`)**, and **`DRAIN = 0.2` (`−0.6 g C/m²`)**, with sign-consistent partial-magnitude differences on `IRRI A50` (`0.60×`) and `CULT P` (`0.40×`), plus strict `< 1e-10 g/m²` C/N/P/S mass conservation across all 9 disturbances, P/S geochemistry, C-14 isotopes, and extreme climates/soils.
-- See [`BENCHMARKS.md`](BENCHMARKS.md) for the full 17-biome table and the list of legacy 1990s bugs eliminated in `ScientificClean`.
+- **Simulate Soil Carbon & Ecosystem Health**
+  Track carbon, nitrogen, phosphorus, and sulfur across pastures, croplands, savannas, and forests in both the **Northern and Southern Hemispheres**. Report soil organic carbon in **`Mg C/ha`** (or `g C/m²`) across classic topsoil (`0–20 cm`), IPCC standard (`0–30 cm`), and deep-root (`0–100 cm`) soil profiles, and test management practices such as grazing, fire, fertilization, tillage, irrigation, organic amendments, and harvest.
+- **Explore Interactively in Your Browser (*Oxisol Studio*)**
+  Launch a built-in visual workbench in **English or Portuguese (PT-BR)** with zero extra dependencies. Start from calibrated ecosystem presets — including Brazilian Cerrado tropical pasture (*Urochloa* / *Panicum*) — adjust climate, soil texture, pH, and latitude with live interactive controls, and inspect results immediately.
+- **Map Real Landscapes with Satellite Rasters**
+  Run regional carbon simulations directly from standard GeoTIFF maps — with built-in support for **MapBiomas Brasil (Collection 11)** and **ESA WorldCover** land-use classes alongside climate and soil rasters. Filter specific classes (such as *Pasture only*), choose your modeling resolution, and export GIS-ready soil carbon maps. Works smoothly on an everyday laptop and scales automatically to high-performance servers.
+- **Fast, Self-Contained & Reproducible**
+  Ships as a single self-contained program with no external C, Fortran, or GDAL libraries to install, runs up to **14× faster** than legacy 1990s implementations, and verifies exact mass conservation at every step.
 
 ---
 
 ## Quick Start
 
+> Requires [Rust](https://rustup.rs/) (`1.80+`). No external C, Fortran, or GDAL libraries needed.
+
+### 1. Open the visual interface (*Oxisol Studio*)
+
 ```bash
-# 1. Launch Oxisol Studio (embedded Web UI + REST API, EN / PT-BR)
 cargo run --release -p oxisol-cli -- serve --port 8080
-# Open http://127.0.0.1:8080
-
-# 2. Run all unit, mass-balance, Tier B, SIMD, I/O, and REST API tests
-cargo test --workspace
-
-# 3. Run a spatial grid spinup (1,000 years, ScientificClean f64)
-cargo run --release -p oxisol-cli -- run \
-  --data-dir /path/to/vemap_data \
-  --years 1000 \
-  --out-nc output_site.nc \
-  --out-checkpoint spinup_checkpoint.json
-
-# 4. Run hardware throughput benchmarks
-cargo run --release -p oxisol-cli -- bench --years 1000
-
-# 5. Build full documentation (mdBook + Rustdoc)
-mdbook serve docs --open
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --open
 ```
+
+Then open **`http://127.0.0.1:8080`** in your browser to explore presets, run scenarios, upload GeoTIFF rasters, or browse the built-in bilingual glossary.
+
+### 2. Run a spatial raster simulation (GeoTIFF)
+
+Want to map soil carbon across a pasture or watershed using your own satellite and climate maps? Start with our ready-to-run tutorial, synthetic sample data, Python script, and Google Earth Engine export template:
+
+👉 **[Spatial Raster Examples & Tutorial (`examples/spatial_raster/`)](examples/spatial_raster/README.md)**
+
+---
+
+## Validated Science, Modern Speed
+
+Oxisol was benchmarked head-to-head against archived continental-scale **VEMAP** simulations covering **3,168 locations across 1,000 years** (38 million cell-months):
+
+- **Continental Accuracy:** Reproduces equilibrium soil organic carbon across 17 biomes at **$R^2 = 0.976$** ($r = 0.988$, median difference **6.1%**), matching active, slow, and passive soil pools as well as forest wood and soil moisture — while fixing known 1990s bugs and adding native Southern Hemisphere seasonality.
+- **Modern Performance:** Runs **2.2× faster** on a single core and **14.2× faster** on a multi-core workstation (completing 3,168 locations × 1,000 years in **under 11 seconds**), and scales cleanly to high-performance servers.
+
+![Oxisol vs. Legacy CENTURY Throughput Benchmark](docs/assets/benchmark_throughput.svg)
+
+![Oxisol vs. CENTURY V4.5 Scientific Parity Across 17 Biomes](docs/assets/benchmark_parity.svg)
+
+> Full validation tables, 17-biome breakdowns, and hardware benchmarks are available in **[`BENCHMARKS.md`](BENCHMARKS.md)**.
+
+---
+
+## Where to Go Next
+
+| What are you looking for? | Start here |
+|---|---|
+| **Plain-language definitions of acronyms & model terms** | [Glossary & Acronyms Dictionary](https://vieiramesquita.github.io/oxisol/glossary.html) |
+| **Step-by-step GeoTIFF / MapBiomas / GEE workflows** | [Spatial Raster Examples](examples/spatial_raster/README.md) |
+| **User guide, equations, CLI flags & REST API** | [Documentation Portal (`mdBook`)](https://vieiramesquita.github.io/oxisol/) |
+| **Detailed scientific validation & speed benchmarks** | [Benchmarks & Parity Report](BENCHMARKS.md) |
+| **Rust library documentation** | [Rust API Reference (`rustdoc`)](https://vieiramesquita.github.io/oxisol/api/oxisol_core/index.html) |
+
+<details>
+<summary><strong>For Developers: Workspace Structure & Testing</strong></summary>
+
+```text
+oxisol/
+├── crates/
+│   ├── oxisol-core/   # Core biogeochemical engine (100% safe Rust)
+│   ├── oxisol-io/     # Pure-Rust GeoTIFF/COG, NetCDF, legacy format & checkpoint I/O
+│   ├── oxisol-grid/   # Multi-core parallel runner & SIMD benchmarks
+│   ├── oxisol-web/    # Embedded Oxisol Studio web app & REST API
+│   └── oxisol-cli/    # Command-line interface (`serve`, `raster`, `run`, `validate`, `bench`)
+├── examples/          # Ready-to-run spatial raster workflows & GEE export scripts
+└── docs/              # Documentation portal (mdBook) & mathematical specification
+```
+
+Run the full test suite:
+
+```bash
+cargo test --workspace
+```
+
+</details>
 
 ---
 
@@ -136,9 +112,12 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --open
 
 ---
 
-## Scientific References & License
+## Scientific Foundations & License
 
-Oxisol is an independent, clean-room implementation grounded in the following peer-reviewed literature and public technical specifications:
+Oxisol is grounded in peer-reviewed soil biogeochemistry and ecosystem modeling literature, including [Parton et al. (1987)](https://doi.org/10.2136/sssaj1987.03615995005100050015x), [Parton et al. (1988)](https://doi.org/10.1007/BF02180320), [Parton et al. (1993)](https://doi.org/10.1029/93GB02042), [VEMAP Members (1995)](https://doi.org/10.1029/95GB02746), [Jobbágy & Jackson (2000)](https://doi.org/10.1890/1051-0761(2000)010[0423:TVDOSO]2.0.CO;2), and [Scharlemann et al. (2014)](https://doi.org/10.4155/cmt.13.77).
+
+<details>
+<summary><strong>Full Scientific Reference List</strong></summary>
 
 - **Scharlemann, J. P. W., Tanner, E. V. J., Hiederer, R., & Kapos, V. (2014).** Global soil carbon: understanding and managing the largest terrestrial carbon pool. *Carbon Management*, 5(1), 81–91. https://doi.org/10.4155/cmt.13.77
 - **Parton, W. J., Schimel, D. S., Cole, C. V., & Ojima, D. S. (1987).** Analysis of Factors Controlling Soil Organic Matter Levels in Great Plains Grasslands. *Soil Science Society of America Journal*, 51(5), 1173–1179. https://doi.org/10.2136/sssaj1987.03615995005100050015x
@@ -149,11 +128,14 @@ Oxisol is an independent, clean-room implementation grounded in the following pe
 - **Kittel, T. G. F., Rosenbloom, N. A., Painter, T. H., & Schimel, D. S. (1995).** The VEMAP Integrated Database for Modelling United States Ecosystem/Vegetation Sensitivity to Climate Change. *Journal of Biogeography*, 22(4/5), 857–862. https://doi.org/10.2307/2845986
 - **Kittel, T. G. F., Rosenbloom, N. A., Royle, J. A., Daly, C., Gibson, W. P., et al. (2004).** VEMAP Phase 2 bioclimatic database. I. Gridded historical (20th century) climate for modeling ecosystem dynamics across the conterminous USA. *Climate Research*, 27, 151–170. https://doi.org/10.3354/cr027151
 - **Parton, W. J., Ojima, D. S., & Schimel, D. S. (2005).** CENTURY: Modeling Ecosystem Responses to Climate Change, Version 4 (VEMAP 1995). *ORNL Distributed Active Archive Center (DAAC)*. https://doi.org/10.3334/ORNLDAAC/820
+- **Jobbágy, E. G., & Jackson, R. B. (2000).** The vertical distribution of soil organic carbon and its relation to climate and vegetation. *Ecological Applications*, 10(2), 423–436. https://doi.org/10.1890/1051-0761(2000)010[0423:TVDOSO]2.0.CO;2
 - **Linacre, E. T. (1977).** A simple formula for estimating evaporation rates in various climates, using temperature data alone. *Agricultural Meteorology*, 18(6), 409–424. https://doi.org/10.1016/0002-1571(77)90007-3
 - **Gupta, S. C., & Larson, W. E. (1979).** Estimating soil water retention characteristics from particle size distribution, organic matter percent, and bulk density. *Water Resources Research*, 15(6), 1633–1635. https://doi.org/10.1029/WR015i006p01633
 - **Rawls, W. J., Brakensiek, D. L., & Saxton, K. E. (1982).** Estimation of Soil Water Properties. *Transactions of the ASAE*, 25(5), 1316–1320. https://doi.org/10.13031/2013.33720
 - **Ryan, M. G. (1991).** Effects of Climate Change on Plant Respiration. *Ecological Applications*, 1(2), 157–167. https://doi.org/10.2307/1941808
 - **Probert, M. E., Keating, B. A., Thompson, J. P., & Parton, W. J. (1995).** Modelling water, nitrogen, and crop yield for a long-term fallow management experiment. *Australian Journal of Experimental Agriculture*, 35(7), 941–950. https://doi.org/10.1071/EA9950941
 - **European Commission — Joint Research Centre (JRC).** MIDAS Policy Model Inventory: *CENTURY agroecosystem dynamic model*. https://web.jrc.ec.europa.eu/policy-model-inventory/explore/models/model-century/
+
+</details>
 
 Released under the **[MIT License](LICENSE)**.

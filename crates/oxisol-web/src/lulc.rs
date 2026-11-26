@@ -468,7 +468,7 @@ pub fn builtin_lulc_schemes() -> Vec<LulcScheme> {
                     "Pasture",
                     "Pastagem",
                     "#edde8e",
-                    "temperate_grassland",
+                    "tropical_pasture_urochloa",
                     0.25,
                     0.0,
                     false,

@@ -46,29 +46,45 @@
           <div class="card control-card">
             <h3 data-i18n="sec_climate">Climate &amp; Atmosphere</h3>
             <div class="ctrl-row">
-              <label><span data-i18n="lbl_temp">Mean Annual Temp</span> <strong id="val-temp">10.5 °C</strong></label>
-              <input id="in-temp" type="range" min="-15" max="38" step="0.5" value="10.5" />
+              <label><span data-i18n="lbl_temp">Mean Annual Temp</span> <strong id="val-temp" class="val-pill">23.5 °C</strong></label>
+              <input id="in-temp" class="range-styled range-temp" type="range" min="-15" max="38" step="0.5" value="23.5" />
             </div>
             <div class="ctrl-row">
-              <label><span data-i18n="lbl_amp">Seasonal Amplitude</span> <strong id="val-amp">13.5 °C</strong></label>
-              <input id="in-amp" type="range" min="0.5" max="30" step="0.5" value="13.5" />
+              <label><span data-i18n="lbl_amp">Seasonal Amplitude</span> <strong id="val-amp" class="val-pill">3.0 °C</strong></label>
+              <input id="in-amp" class="range-styled range-amp" type="range" min="0.5" max="30" step="0.5" value="3.0" />
             </div>
             <div class="ctrl-row">
-              <label><span data-i18n="lbl_precip">Annual Precip</span> <strong id="val-precip">58 cm</strong></label>
-              <input id="in-precip" type="range" min="5" max="600" step="5" value="58" />
+              <label><span data-i18n="lbl_precip">Annual Precip</span> <strong id="val-precip" class="val-pill">150 cm</strong></label>
+              <input id="in-precip" class="range-styled range-precip" type="range" min="5" max="600" step="5" value="150" />
             </div>
             <div class="ctrl-row">
-              <label><span data-i18n="lbl_lat">Latitude (+N / −S)</span> <strong id="val-lat">40.8°</strong></label>
-              <input id="in-lat" type="range" min="-65" max="75" step="0.5" value="40.8" />
+              <label><span data-i18n="lbl_lat">Latitude (+N / −S)</span> <strong id="val-lat" class="val-pill">16.5°S</strong></label>
+              <div class="lat-globe-box">
+                <div id="lat-globe" class="lat-globe-svg" aria-label="Earth latitude preview"></div>
+                <div class="lat-globe-meta">
+                  <input id="in-lat" class="range-styled range-lat" type="range" min="-65" max="75" step="0.5" value="-16.5" />
+                  <div class="lat-zone-row">
+                    <span id="lat-zone-badge" class="micro-badge">Tropical</span>
+                    <span id="lat-hemi-badge" class="micro-badge micro-muted">SH · Austral</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="mini-climo-wrap">
+              <div class="mini-climo-head">
+                <span data-i18n="climo_lbl">12-Month Climatology Preview</span>
+                <span id="precip-regime-badge" class="micro-badge">Humid</span>
+              </div>
+              <div id="mini-climograph" class="mini-climo-svg"></div>
             </div>
             <div class="ctrl-grid-2">
               <div>
                 <label class="small-lbl" data-i18n="lbl_co2_start">CO₂ Start (ppm)</label>
-                <input id="in-co2-start" type="number" class="input-num" min="180" max="1500" step="10" value="350" />
+                <input id="in-co2-start" type="number" class="input-num" min="180" max="1500" step="10" value="420" />
               </div>
               <div>
                 <label class="small-lbl" data-i18n="lbl_co2_end">CO₂ End (ppm)</label>
-                <input id="in-co2-end" type="number" class="input-num" min="180" max="1500" step="10" value="350" />
+                <input id="in-co2-end" type="number" class="input-num" min="180" max="1500" step="10" value="480" />
               </div>
             </div>
           </div>
@@ -76,31 +92,32 @@
           <div class="card control-card">
             <h3 data-i18n="sec_soil">Soil Properties</h3>
             <div class="ctrl-row">
-              <label><span data-i18n="lbl_sand">Sand</span> <strong id="val-sand">42%</strong></label>
-              <input id="in-sand" type="range" min="5" max="90" step="1" value="42" />
+              <label><span data-i18n="lbl_sand">Sand</span> <strong id="val-sand">36%</strong></label>
+              <input id="in-sand" class="range-styled range-sand" type="range" min="5" max="90" step="1" value="36" />
             </div>
             <div class="ctrl-row">
-              <label><span data-i18n="lbl_clay">Clay</span> <strong id="val-clay">22%</strong></label>
-              <input id="in-clay" type="range" min="5" max="80" step="1" value="22" />
+              <label><span data-i18n="lbl_clay">Clay</span> <strong id="val-clay">48%</strong></label>
+              <input id="in-clay" class="range-styled range-clay" type="range" min="5" max="80" step="1" value="48" />
             </div>
             <div class="texture-bar" id="texture-bar"></div>
             <div class="ctrl-grid-2">
               <div>
-                <label class="small-lbl" data-i18n="lbl_ph">Soil pH</label>
-                <input id="in-ph" type="number" class="input-num" min="3.8" max="9.2" step="0.1" value="6.8" />
+                <label class="small-lbl"><span data-i18n="lbl_ph">Soil pH</span> <span id="ph-badge" class="ph-mini-tag">Acidic</span></label>
+                <input id="in-ph" type="number" class="input-num" min="3.8" max="9.2" step="0.1" value="5.5" />
+                <div class="ph-litmus-bar"><span id="ph-needle" class="ph-needle"></span></div>
               </div>
               <div>
                 <label class="small-lbl" data-i18n="lbl_bulkd">Bulk Density</label>
-                <input id="in-bulkd" type="number" class="input-num" min="0.8" max="1.8" step="0.02" value="1.32" />
+                <input id="in-bulkd" type="number" class="input-num" min="0.8" max="1.8" step="0.02" value="1.26" />
               </div>
             </div>
             <div class="ctrl-row">
-              <label><span data-i18n="lbl_rock">Rock Fraction</span> <strong id="val-rock">5%</strong></label>
-              <input id="in-rock" type="range" min="0" max="75" step="1" value="5" />
+              <label><span data-i18n="lbl_rock">Rock Fraction</span> <strong id="val-rock">3%</strong></label>
+              <input id="in-rock" class="range-styled range-rock" type="range" min="0" max="75" step="1" value="3" />
             </div>
             <div class="ctrl-row">
               <label><span data-i18n="lbl_drain">Drainage (Anaerobic → Well)</span> <strong id="val-drain">1.00</strong></label>
-              <input id="in-drain" type="range" min="0.1" max="1.0" step="0.05" value="1.0" />
+              <input id="in-drain" class="range-styled range-drain" type="range" min="0.1" max="1.0" step="0.05" value="1.0" />
             </div>
           </div>
 
@@ -476,12 +493,12 @@
               </div>
             </div>
             <div class="ctrl-row">
-              <label><span data-i18n="lulc_dt">Warming Shift (ΔT)</span> <strong id="val-lulc-dt">+1.5 °C</strong></label>
-              <input id="lulc-dt" type="range" min="-2" max="6" step="0.25" value="1.5" />
+              <label><span data-i18n="lulc_dt">Warming Shift (ΔT)</span> <strong id="val-lulc-dt" class="val-pill">+1.5 °C</strong></label>
+              <input id="lulc-dt" class="range-styled range-temp" type="range" min="-2" max="6" step="0.25" value="1.5" />
             </div>
             <div class="ctrl-row">
-              <label><span data-i18n="lulc_pscale">Rainfall Factor</span> <strong id="val-lulc-pscale">95%</strong></label>
-              <input id="lulc-pscale" type="range" min="60" max="140" step="5" value="95" />
+              <label><span data-i18n="lulc_pscale">Rainfall Factor</span> <strong id="val-lulc-pscale" class="val-pill">95%</strong></label>
+              <input id="lulc-pscale" class="range-styled range-precip" type="range" min="60" max="140" step="5" value="95" />
             </div>
             <div class="ctrl-grid-2">
               <div>

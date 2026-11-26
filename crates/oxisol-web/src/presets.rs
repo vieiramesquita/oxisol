@@ -99,6 +99,20 @@ pub fn base_biome_params<F: Float>(preset_id: &str) -> RawBiomeParams<F> {
     };
     crops.insert(c4.name.clone(), c4);
 
+    // Exotic African C4 tropical forage grass (Urochloa brizantha / Panicum maximum)
+    // High C4 tropical growth optimum (~30 C), deep dense fibrous root allocation,
+    // strong water-use efficiency under Cerrado seasonality.
+    let uroc = CropParams::<F> {
+        name: "UROC".into(),
+        prdx1: f(420.0),
+        ppdf: [f(30.0), f(45.0), f(1.2), f(3.0)],
+        frtc: [f(0.45), f(0.58), f(4.0)],
+        co2ipr: f(1.12),
+        co2itr: f(0.68),
+        ..Default::default()
+    };
+    crops.insert(uroc.name.clone(), uroc);
+
     // Annual grain crop (maize/wheat style)
     let grain = CropParams::<F> {
         name: "GRAIN".into(),
@@ -320,6 +334,12 @@ pub fn base_biome_params<F: Float>(preset_id: &str) -> RawBiomeParams<F> {
             site.frtcis = [f(320.0), F::ZERO];
             site.crtcis = [f(2100.0), F::ZERO];
         }
+        "tropical_pasture_urochloa" => {
+            site.som2ci = [f(2400.0), F::ZERO];
+            site.som3ci = [f(1750.0), F::ZERO];
+            site.aglcis = [f(160.0), F::ZERO];
+            site.bglcis = [f(420.0), F::ZERO];
+        }
         "semiarid_shrubland" => {
             fix.vlossg = f(0.05);
             site.som2ci = [f(1000.0), F::ZERO];
@@ -345,9 +365,48 @@ pub fn base_biome_params<F: Float>(preset_id: &str) -> RawBiomeParams<F> {
     }
 }
 
-/// Return all 7 built-in calibrated ecosystem presets for `GET /api/presets`.
+/// Return all 8 built-in calibrated ecosystem presets for `GET /api/presets`.
+///
+/// The default (first) preset is Brazilian Cerrado exotic C4 pasture
+/// (*Urochloa brizantha* / *Panicum maximum*).
 pub fn builtin_presets() -> Vec<PresetSummary> {
     vec![
+        PresetSummary {
+            id: "tropical_pasture_urochloa".into(),
+            name_en: "Tropical Exotic Pasture — Urochloa brizantha / Panicum maximum (Cerrado, Brazil)".into(),
+            name_pt: "Pastagem Tropical Exótica — Urochloa brizantha / Panicum maximum (Cerrado, Brasil)".into(),
+            desc_en: "Deep-rooted African C4 forage pasture (Marandu / Mombaça) on Brazilian Cerrado clayey Oxisol (16.5°S, 1,500 mm/yr, 23.5 °C).".into(),
+            desc_pt: "Pastagem C4 tropical africana (Brachiaria / Panicum) de raízes profundas em Latossolo argiloso do Cerrado (16,5°S, 1.500 mm/ano, 23,5 °C).".into(),
+            system_kind: "grassland".into(),
+            defaults: SimulateRequest {
+                preset_id: "tropical_pasture_urochloa".into(),
+                mean_temp_c: 23.5,
+                temp_amp_c: 3.0,
+                annual_precip_cm: 150.0,
+                lat: -16.5,
+                co2_start_ppm: 420.0,
+                co2_end_ppm: 480.0,
+                sand: 0.36,
+                silt: 0.16,
+                clay: 0.48,
+                bulkd: 1.26,
+                ph: 5.5,
+                rock_frac: 0.03,
+                drain: 1.0,
+                years: 200,
+                elements: "cnps".into(),
+                profile: "clean".into(),
+                precision: "f64".into(),
+                audit_mass_balance: true,
+                tillage: TillageMode::None,
+                fertilizer_n: 0.0,
+                fertilizer_p: 0.0,
+                irrigation: IrrigationMode::None,
+                fire_interval_yr: 0,
+                grazing_intensity: 0.22,
+                omad_c: 0.0,
+            },
+        },
         PresetSummary {
             id: "amazon_rainforest".into(),
             name_en: "Amazon Tropical Rainforest (Clayey Oxisol)".into(),
@@ -613,6 +672,9 @@ pub fn build_schedule_from_request(req: &SimulateRequest, years: i32) -> Schedul
     let pre_spring = if sh { 9u8 } else { 3u8 };
 
     let (initial_system, initial_crop, initial_tree) = match req.preset_id.as_str() {
+        "tropical_pasture_urochloa" => {
+            (SystemKind::GrasslandCrop, "UROC".to_string(), String::new())
+        }
         "amazon_rainforest" => (SystemKind::Forest, String::new(), "AMAZ".to_string()),
         "temperate_deciduous" => (SystemKind::Forest, String::new(), "TMDF".to_string()),
         "boreal_conifer" => (SystemKind::Forest, String::new(), "BORE".to_string()),

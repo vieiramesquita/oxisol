@@ -16,6 +16,7 @@ const I18N = {
     lbl_amp: "Seasonal Amplitude",
     lbl_precip: "Annual Precip",
     lbl_lat: "Latitude (+N / −S)",
+    climo_lbl: "12-Month Climatology Preview",
     lbl_co2_start: "CO₂ Start (ppm)",
     lbl_co2_end: "CO₂ End (ppm)",
     lbl_sand: "Sand",
@@ -80,7 +81,7 @@ const I18N = {
     api_overview_desc: "Oxisol Studio embeds an Axum REST API inside the single compiled Rust binary. Automate scenarios from Python, R, Julia, or GIS pipelines on local machines or remote high-performance servers over SSH tunnels.",
     ep_health: "Liveness & version check",
     ep_sys: "Host CPU count, CellState L1d bytes & attached grid",
-    ep_presets: "7 calibrated ecosystem presets (EN/PT-BR)",
+    ep_presets: "8 calibrated ecosystem presets (EN/PT-BR)",
     ep_sim: "Single-cell scenario trajectory + mass balance audit",
     ep_grid: "Lock-free multi-core spatial grid execution",
     ep_lulc_s: "MapBiomas & ESA WorldCover LULC schemes",
@@ -130,6 +131,7 @@ const I18N = {
     lbl_amp: "Amplitude Sazonal",
     lbl_precip: "Precipitação Anual",
     lbl_lat: "Latitude (+N / −S)",
+    climo_lbl: "Climatologia Mensal (12 Meses)",
     lbl_co2_start: "CO₂ Inicial (ppm)",
     lbl_co2_end: "CO₂ Final (ppm)",
     lbl_sand: "Areia",
@@ -194,7 +196,7 @@ const I18N = {
     api_overview_desc: "O Oxisol Studio embute uma API REST Axum dentro do binário único em Rust. Automatize cenários via Python, R, Julia ou pipelines GIS localmente ou em servidores modernos de alto desempenho via túnel SSH.",
     ep_health: "Checagem de saúde e versão",
     ep_sys: "CPUs do host, tamanho L1d do CellState e grade anexada",
-    ep_presets: "7 presets calibrados de ecossistemas (EN/PT-BR)",
+    ep_presets: "8 presets calibrados de ecossistemas (EN/PT-BR)",
     ep_sim: "Trajetória de célula única + auditoria de balanço de massa",
     ep_grid: "Execução espacial multi-core lock-free via rayon",
     ep_lulc_s: "Esquemas de classes MapBiomas & ESA WorldCover",
@@ -260,6 +262,7 @@ function applyLang(lang) {
   });
   populatePresetSelect(true);
   populateLulcSchemeSelect(true);
+  syncSliderLabels();
   if (state.baselineSim) $("btn-pin").textContent = t("btn_pinned");
 }
 
@@ -294,19 +297,246 @@ function updateTextureBar() {
   `;
 }
 
+function lerpRamp(u, stops) {
+  const c = Math.max(0, Math.min(1, u));
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [p0, c0] = stops[i];
+    const [p1, c1] = stops[i + 1];
+    if (c <= p1) {
+      const t = (c - p0) / Math.max(p1 - p0, 1e-6);
+      const r = Math.round(c0[0] + (c1[0] - c0[0]) * t);
+      const g = Math.round(c0[1] + (c1[1] - c0[1]) * t);
+      const b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+  }
+  const last = stops[stops.length - 1][1];
+  return `rgb(${last[0]}, ${last[1]}, ${last[2]})`;
+}
+
+const TEMP_STOPS = [
+  [0.0, [56, 189, 248]],
+  [0.22, [34, 211, 238]],
+  [0.42, [16, 185, 129]],
+  [0.66, [245, 158, 11]],
+  [0.83, [249, 115, 22]],
+  [1.0, [239, 68, 68]]
+];
+const AMP_STOPS = [
+  [0.0, [20, 184, 166]],
+  [0.35, [56, 189, 248]],
+  [0.7, [245, 158, 11]],
+  [1.0, [225, 29, 72]]
+];
+const PRECIP_STOPS = [
+  [0.0, [203, 213, 225]],
+  [0.18, [148, 163, 184]],
+  [0.42, [125, 211, 252]],
+  [0.72, [2, 132, 199]],
+  [1.0, [30, 58, 138]]
+];
+const LAT_STOPS = [
+  [0.0, [96, 165, 250]],
+  [0.28, [52, 211, 153]],
+  [0.46, [245, 158, 11]],
+  [0.66, [52, 211, 153]],
+  [1.0, [96, 165, 250]]
+];
+
+function styleSliderValue(inputEl, pillEl, color, textOverride) {
+  if (inputEl) inputEl.style.setProperty("--thumb-color", color);
+  if (pillEl) {
+    pillEl.style.color = textOverride || color;
+    pillEl.style.borderColor = color;
+  }
+}
+
+function renderLatGlobe(lat) {
+  const host = $("lat-globe");
+  if (!host) return;
+  const rad = (lat * Math.PI) / 180;
+  const cx = 33, cy = 33, R = 27;
+  const y = cy - R * Math.sin(rad);
+  const rx = Math.max(2.5, R * Math.cos(rad));
+  const ry = Math.max(1.2, rx * 0.22);
+  const absLat = Math.abs(lat);
+  const latNorm = (lat + 65) / 140;
+  const col = lerpRamp(latNorm, LAT_STOPS);
+
+  const eqY = cy;
+  const trN = cy - R * Math.sin((23.5 * Math.PI) / 180);
+  const trS = cy + R * Math.sin((23.5 * Math.PI) / 180);
+  const dotX = cx - rx * 0.28; // Brazil / Americas longitude focus
+
+  host.innerHTML = `<svg viewBox="0 0 66 66" role="img" aria-label="Earth latitude ${lat.toFixed(1)}">
+    <defs>
+      <radialGradient id="oxGlobeBg" cx="35%" cy="30%" r="72%">
+        <stop offset="0%" stop-color="#1d4ed8" />
+        <stop offset="55%" stop-color="#0f294a" />
+        <stop offset="100%" stop-color="#071324" />
+      </radialGradient>
+      <clipPath id="oxGlobeClip"><circle cx="${cx}" cy="${cy}" r="${R}" /></clipPath>
+    </defs>
+    <circle cx="${cx}" cy="${cy}" r="${R + 1.5}" fill="none" stroke="rgba(56,189,248,0.22)" stroke-width="1.2" />
+    <circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#oxGlobeBg)" stroke="#2c4464" stroke-width="1" />
+    <g clip-path="url(#oxGlobeClip)">
+      <!-- Stylized Americas + Africa/Europe silhouettes centered near Brazil/Atlantic -->
+      <path d="M12,11 L21,9 L26,15 L23,23 L17,26 L13,22 Z" fill="#1e5c45" opacity="0.88" />
+      <path d="M19,29 L27,30 L32,37 L29,48 L24,56 L21,53 L20,41 L17,34 Z" fill="#237a57" opacity="0.92" />
+      <path d="M41,11 L53,13 L56,22 L47,25 L41,20 Z" fill="#1e5c45" opacity="0.72" />
+      <path d="M40,26 L53,27 L57,38 L51,51 L44,48 L41,37 Z" fill="#1e5c45" opacity="0.78" />
+      <!-- Reference latitudes: Tropics + Equator -->
+      <line x1="${cx - R}" y1="${trN.toFixed(1)}" x2="${cx + R}" y2="${trN.toFixed(1)}" stroke="rgba(251,191,36,0.28)" stroke-width="0.7" stroke-dasharray="2,2" />
+      <line x1="${cx - R}" y1="${trS.toFixed(1)}" x2="${cx + R}" y2="${trS.toFixed(1)}" stroke="rgba(251,191,36,0.28)" stroke-width="0.7" stroke-dasharray="2,2" />
+      <line x1="${cx - R}" y1="${eqY}" x2="${cx + R}" y2="${eqY}" stroke="rgba(255,255,255,0.4)" stroke-width="0.85" stroke-dasharray="3,2" />
+      <!-- Active Latitude Parallel & Glowing Marker -->
+      <ellipse cx="${cx}" cy="${y.toFixed(1)}" rx="${rx.toFixed(1)}" ry="${ry.toFixed(1)}" fill="none" stroke="${col}" stroke-width="1.6" />
+      <circle cx="${dotX.toFixed(1)}" cy="${y.toFixed(1)}" r="4.6" fill="${col}" opacity="0.28" />
+      <circle cx="${dotX.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5" fill="${col}" stroke="#071324" stroke-width="0.9" />
+    </g>
+    <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="0.9" />
+  </svg>`;
+
+  const pt = state.lang === "pt";
+  let zone = pt ? "Boreal / Polar" : "Boreal / Subpolar";
+  if (absLat < 7) zone = pt ? "Equatorial" : "Equatorial";
+  else if (absLat < 23.5) zone = pt ? "Tropical" : "Tropical";
+  else if (absLat < 35) zone = pt ? "Subtropical" : "Subtropical";
+  else if (absLat < 55) zone = pt ? "Temperado" : "Temperate";
+
+  const zBadge = $("lat-zone-badge");
+  const hBadge = $("lat-hemi-badge");
+  if (zBadge) {
+    zBadge.textContent = zone;
+    zBadge.style.color = col;
+    zBadge.style.borderColor = col;
+  }
+  if (hBadge) {
+    hBadge.textContent = lat < -0.2
+      ? (pt ? "Sul · Austral" : "SH · Austral")
+      : lat > 0.2
+        ? (pt ? "Norte · Boreal" : "NH · Boreal")
+        : (pt ? "Equador 0°" : "Equator 0°");
+  }
+}
+
+function renderMiniClimograph(meanT, ampT, precipCm, lat) {
+  const host = $("mini-climograph");
+  if (!host) return;
+  const peakMonth = lat >= 0 ? 6 : 0;
+  const seas = Math.abs(lat) < 25 ? 0.55 : 0.28;
+  const weights = Array.from({ length: 12 }, (_, m) => {
+    const ph = (2 * Math.PI * (m - peakMonth)) / 12;
+    return Math.max(0.15, 1 + seas * Math.cos(ph));
+  });
+  const wSum = weights.reduce((a, b) => a + b, 0);
+  const precips = weights.map((w) => (Math.max(1, precipCm) * w) / wSum);
+  const temps = Array.from({ length: 12 }, (_, m) => {
+    const ph = (2 * Math.PI * (m - peakMonth)) / 12;
+    return meanT + ampT * Math.cos(ph);
+  });
+
+  const W = 280, H = 64, padL = 6, padR = 6, padT = 8, padB = 14;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const maxP = Math.max(5, ...precips) * 1.15;
+  const minT = Math.min(-10, ...temps) - 2;
+  const maxT = Math.max(35, ...temps) + 2;
+  const barW = plotW / 12 - 3;
+  const pCol = lerpRamp((precipCm - 5) / 595, PRECIP_STOPS);
+  const tCol = lerpRamp((meanT + 15) / 53, TEMP_STOPS);
+
+  const months = state.lang === "pt"
+    ? ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"]
+    : ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+
+  const bars = precips.map((p, m) => {
+    const x = padL + (m + 0.5) * (plotW / 12) - barW / 2;
+    const h = Math.max(2, (p / maxP) * plotH);
+    const y = padT + plotH - h;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${pCol}" opacity="0.65" />`;
+  }).join("");
+
+  const pts = temps.map((tv, m) => {
+    const x = padL + (m + 0.5) * (plotW / 12);
+    const y = padT + plotH - ((tv - minT) / Math.max(maxT - minT, 1)) * plotH;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+
+  const labels = months.map((lbl, m) => {
+    const x = padL + (m + 0.5) * (plotW / 12);
+    return `<text x="${x.toFixed(1)}" y="${H - 2}" text-anchor="middle" fill="#64748b" font-size="8" font-family="var(--mono)">${lbl}</text>`;
+  }).join("");
+
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}">${bars}<polyline points="${pts}" fill="none" stroke="${tCol}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />${labels}</svg>`;
+
+  const pBadge = $("precip-regime-badge");
+  if (pBadge) {
+    const pt = state.lang === "pt";
+    let reg = pt ? "Hiperúmido" : "Hyper-humid";
+    if (precipCm < 25) reg = pt ? "Árido" : "Arid";
+    else if (precipCm < 55) reg = pt ? "Semiárido" : "Semi-arid";
+    else if (precipCm < 110) reg = pt ? "Subúmido" : "Sub-humid";
+    else if (precipCm < 220) reg = pt ? "Úmido" : "Humid";
+    pBadge.textContent = reg;
+    pBadge.style.color = precipCm > 380 ? "#93c5fd" : pCol;
+    pBadge.style.borderColor = pCol;
+  }
+}
+
+function updatePhLitmus() {
+  const phEl = $("in-ph");
+  const needle = $("ph-needle");
+  const badge = $("ph-badge");
+  if (!phEl || !needle) return;
+  const ph = Math.max(3.8, Math.min(9.2, Number(phEl.value) || 5.5));
+  const u = (ph - 3.8) / (9.2 - 3.8);
+  needle.style.left = `${(u * 100).toFixed(1)}%`;
+  if (badge) {
+    const pt = state.lang === "pt";
+    let lbl = pt ? "Alcalino" : "Alkaline";
+    let col = "#a78bfa";
+    if (ph < 5.0) { lbl = pt ? "Muito Ácido" : "Strong Acid"; col = "#f87171"; }
+    else if (ph < 6.2) { lbl = pt ? "Ácido" : "Acidic"; col = "#fb923c"; }
+    else if (ph <= 7.4) { lbl = pt ? "Neutro" : "Neutral"; col = "#34d399"; }
+    badge.textContent = lbl;
+    badge.style.color = col;
+  }
+}
+
 function syncSliderLabels() {
-  $("val-temp").textContent = `${Number($("in-temp").value).toFixed(1)} °C`;
-  $("val-amp").textContent = `${Number($("in-amp").value).toFixed(1)} °C`;
-  $("val-precip").textContent = `${$("in-precip").value} cm`;
+  const temp = Number($("in-temp").value);
+  const amp = Number($("in-amp").value);
+  const precip = Number($("in-precip").value);
   const lat = Number($("in-lat").value);
+
+  $("val-temp").textContent = `${temp.toFixed(1)} °C`;
+  $("val-amp").textContent = `${amp.toFixed(1)} °C`;
+  $("val-precip").textContent = `${precip} cm`;
   $("val-lat").textContent = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? "N" : "S"}`;
   $("val-rock").textContent = `${$("in-rock").value}%`;
   $("val-drain").textContent = Number($("in-drain").value).toFixed(2);
   $("val-years").textContent = `${$("in-years").value} yr`;
   $("val-grid-years").textContent = `${$("grid-years").value} yr`;
+
   const ldt = Number($("lulc-dt").value);
+  const lps = Number($("lulc-pscale").value);
   $("val-lulc-dt").textContent = `${ldt >= 0 ? "+" : ""}${ldt.toFixed(2)} °C`;
-  $("val-lulc-pscale").textContent = `${$("lulc-pscale").value}%`;
+  $("val-lulc-pscale").textContent = `${lps}%`;
+
+  // Dynamic semantic slider & badge coloring
+  styleSliderValue($("in-temp"), $("val-temp"), lerpRamp((temp + 15) / 53, TEMP_STOPS));
+  styleSliderValue($("in-amp"), $("val-amp"), lerpRamp((amp - 0.5) / 29.5, AMP_STOPS));
+  const precipCol = lerpRamp((precip - 5) / 595, PRECIP_STOPS);
+  styleSliderValue($("in-precip"), $("val-precip"), precipCol, precip > 380 ? "#93c5fd" : precipCol);
+  styleSliderValue($("in-lat"), $("val-lat"), lerpRamp((lat + 65) / 140, LAT_STOPS));
+  styleSliderValue($("lulc-dt"), $("val-lulc-dt"), lerpRamp((ldt + 2) / 8, TEMP_STOPS));
+  const lpsCol = lerpRamp((lps - 60) / 80, PRECIP_STOPS);
+  styleSliderValue($("lulc-pscale"), $("val-lulc-pscale"), lpsCol, lps > 120 ? "#93c5fd" : lpsCol);
+
+  renderLatGlobe(lat);
+  renderMiniClimograph(temp, amp, precip, lat);
+  updatePhLitmus();
   updateTextureBar();
 }
 
@@ -989,6 +1219,7 @@ async function init() {
   document.querySelectorAll('input[type="range"]').forEach((inp) => {
     inp.addEventListener("input", syncSliderLabels);
   });
+  $("in-ph").addEventListener("input", updatePhLitmus);
 
   $("preset-select").addEventListener("change", (e) => {
     loadPresetIntoControls(e.target.value);

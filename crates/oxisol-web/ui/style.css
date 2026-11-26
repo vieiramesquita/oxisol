@@ -109,6 +109,136 @@ body {
 .small-lbl { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 
 input[type="range"] { width: 100%; accent-color: var(--emerald); cursor: pointer; }
+input[type="range"].range-styled {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 7px;
+  border-radius: 999px;
+  outline: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-2);
+}
+input[type="range"].range-styled::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--thumb-color, #10b981);
+  border: 2px solid #0a0e14;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.22), 0 2px 6px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.15s ease;
+}
+input[type="range"].range-styled::-webkit-slider-thumb:hover { transform: scale(1.15); }
+input[type="range"].range-styled::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--thumb-color, #10b981);
+  border: 2px solid #0a0e14;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.22), 0 2px 6px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+.range-temp {
+  background: linear-gradient(90deg, #38bdf8 0%, #22d3ee 22%, #10b981 42%, #f59e0b 66%, #f97316 83%, #ef4444 100%) !important;
+}
+.range-amp {
+  background: linear-gradient(90deg, #14b8a6 0%, #38bdf8 35%, #f59e0b 70%, #e11d48 100%) !important;
+}
+.range-precip {
+  background: linear-gradient(90deg, #cbd5e1 0%, #94a3b8 18%, #7dd3fc 42%, #0284c7 72%, #1e3a8a 100%) !important;
+}
+.range-lat {
+  background: linear-gradient(90deg, #60a5fa 0%, #34d399 28%, #f59e0b 46%, #34d399 66%, #60a5fa 100%) !important;
+}
+.range-sand { background: linear-gradient(90deg, #475569 0%, #f59e0b 100%) !important; --thumb-color: #f59e0b; }
+.range-clay { background: linear-gradient(90deg, #475569 0%, #8b5cf6 100%) !important; --thumb-color: #8b5cf6; }
+.range-rock { background: linear-gradient(90deg, #78350f 0%, #94a3b8 100%) !important; --thumb-color: #cbd5e1; }
+.range-drain { background: linear-gradient(90deg, #0e7490 0%, #10b981 55%, #d97706 100%) !important; --thumb-color: #10b981; }
+
+.val-pill {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+
+/* Interactive Latitude Earth Globe */
+.lat-globe-box {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0.45rem 0.6rem;
+}
+.lat-globe-svg { width: 66px; height: 66px; flex-shrink: 0; }
+.lat-globe-svg svg { width: 66px; height: 66px; display: block; }
+.lat-globe-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.lat-zone-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.micro-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--emerald);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.micro-muted {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--muted);
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+/* Mini 12-Month Climograph */
+.mini-climo-wrap {
+  background: #0b1119;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0.45rem 0.55rem 0.35rem;
+  margin-bottom: 0.65rem;
+}
+.mini-climo-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.mini-climo-svg svg { width: 100%; height: 64px; display: block; }
+
+/* Soil pH Litmus Strip */
+.ph-mini-tag {
+  float: right;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+}
+.ph-litmus-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  margin-top: 5px;
+  background: linear-gradient(90deg, #ef4444 0%, #f97316 25%, #eab308 42%, #10b981 59%, #06b6d4 78%, #8b5cf6 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.ph-needle {
+  position: absolute;
+  top: -3px;
+  width: 4px;
+  height: 11px;
+  border-radius: 2px;
+  background: #ffffff;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.85);
+  transform: translateX(-50%);
+  transition: left 0.15s ease;
+}
 .input-select, .input-num {
   width: 100%; background: var(--surface-2); color: var(--text);
   border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px;

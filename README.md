@@ -49,29 +49,29 @@ Full continental US VEMAP spinup (**3,168 cells × 1,000 years = 38.0 million ce
 | Engine / Mode | Precision | Threads | Wall Time | Throughput | Speedup vs Legacy |
 |---|---:|---:|---:|---:|---:|
 | Legacy Fortran/C (`gfortran -O2`) | `f32` | 1 | 154.5 s (extrapolated from 181 cells in 8.83 s) | 20,500 cell-yr/s | 1.00× |
-| `century-rs` Serial (`run_grid_serial`) | `f32` | 1 | ~70.8 s (128 cells in 2.86 s) | **44,768 cell-yr/s** | **2.18×** |
-| `century-rs` Parallel (`rayon`, `VemapV45Parity`) | `f32` | 16 | **10.18 s** (3,168×1,000 yr) | **311,213 cell-yr/s** (3.73M cell-mo/s) | **15.18×** |
-| `century-rs` Parallel (`rayon`, `ScientificClean`) | `f64` | 16 | **10.19 s** (3,168×1,000 yr) | **310,983 cell-yr/s** (3.73M cell-mo/s) | **15.17×** |
-| `century-rs` Parallel (`rayon`, `ScientificClean`) | `f32` | 16 | **10.13 s** (3,168×1,000 yr) | **312,770 cell-yr/s** (3.75M cell-mo/s) | **15.26×** |
-| `century-rs` Transient (`1895–1993`, `ScientificClean`) | `f64` | 16 | **1.04 s** (3,168×99 yr) | **302,191 cell-yr/s** (3.63M cell-mo/s) | — |
-| `century-grid` SIMD `f32x8` SOM kernel | `f32` | 1 | — | **7.64M cell-yr/s** (91.62M cell-mo/s) | — |
+| `century-rs` Serial (`run_grid_serial`) | `f32` | 1 | ~73.3 s (128 cells in 2.96 s) | **43,225 cell-yr/s** | **2.11×** |
+| `century-rs` Parallel (`rayon`, `VemapV45Parity`) | `f32` | 16 | **10.92 s** (3,168×1,000 yr) | **290,200 cell-yr/s** (3.48M cell-mo/s) | **14.16×** |
+| `century-rs` Parallel (`rayon`, `ScientificClean`) | `f64` | 16 | **11.64 s** (3,168×1,000 yr) | **272,253 cell-yr/s** (3.27M cell-mo/s) | **13.28×** |
+| `century-rs` Parallel (`rayon`, `ScientificClean`) | `f32` | 16 | **11.13 s** (3,168×1,000 yr) | **284,715 cell-yr/s** (3.42M cell-mo/s) | **13.89×** |
+| `century-rs` Transient (`1895–1993`, `ScientificClean`) | `f64` | 16 | **1.19 s** (3,168×99 yr) | **264,148 cell-yr/s** (3.17M cell-mo/s) | — |
+| `century-grid` SIMD `f32x8` SOM kernel | `f32` | 1 | — | **7.88M cell-yr/s** (94.60M cell-mo/s) | — |
 
 ### Scaling to AMD EPYC + 512 GB RAM Servers
-- Single-threaded `century-rs` outperforms legacy `gfortran -O2` by **2.18×** (`44.8k` vs `20.5k cell-yr/s`) via pre-compiled O(1) biome schedules (`CompiledSchedule`), const-specialized `NELEM` decomposition kernels with direct mass-conserving pool transfers, and cached spinup PET.
-- On the 8-physical-core Ryzen 7 5700X, `century-grid` achieves **6.97×** parallel scaling (**87.1% physical-core efficiency**, **15.2×** over legacy) with zero locks and zero per-month heap allocations.
+- Single-threaded `century-rs` outperforms legacy `gfortran -O2` by **2.11×** (`43.2k` vs `20.5k cell-yr/s`) via pre-compiled O(1) biome schedules (`CompiledSchedule`), const-specialized `NELEM` decomposition kernels with direct mass-conserving pool transfers, and cached spinup PET.
+- On the 8-physical-core Ryzen 7 5700X, `century-grid` achieves **6.71×** parallel scaling (**83.9% physical-core efficiency**, **14.2×** over legacy) with zero locks and zero per-month heap allocations.
 - Because `CellState<f64>` fits in L1d and all grid inputs are preloaded once in read-only memory (`Arc<RawBiomeParams>`), a 128-core / 256-thread AMD EPYC server with 512 GB RAM can hold continental/global 1 km grids (>1M cells) entirely in RAM and sustain near-linear scaling via `--threads <N> --chunk-size 32` (optionally compiled with `RUSTFLAGS="-C target-cpu=native"`).
 
 ---
 
 ## Validation Summary
 
-1. **Mass Conservation & Edge-Case Invariants (`cargo test --workspace`):** Verified exact C, N, P, and S conservation to `< 1e-10 g/m²` per monthly step across all subsystems, all management events (`CULT`, `FERT`, `IRRI` modes 0–3, `OMAD`, `EROD`, `GRAZ`, `HARV`, `FIRE`, `TREM`), C-14 isotope propagation, sub-zero snowmelt above `tmelt[0]`, once-per-autumn mixed deciduous leaf abscission, `CompiledSchedule` exact equivalence, hyper-arid zero-precip deserts, continuous permafrost, extreme 100% sand/clay/90% rock/1-layer soils, and `FlowLedger` >300-flow overflow bursts (`tests/oracle_tier_b.rs`).
+1. **Mass Conservation & Edge-Case Invariants (`cargo test --workspace`):** Verified exact C, N, P, and S conservation to `< 1e-10 g/m²` per monthly step across all subsystems, all management events (`CULT` `CULTRA(1..7)`, `FERT`, `IRRI` modes 0–3, `OMAD`, `EROD`, `GRAZ`, `HARV` remaining-fraction `AGLREM`/`BGLREM`, `FIRE`, `TREM` `RETF(part, elem)`), C-14 isotope propagation, sub-zero snowmelt above `tmelt[0]`, hemisphere-aware once-per-autumn deciduous leaf abscission (Northern & Southern Hemispheres), `CompiledSchedule` exact equivalence, non-finite transfer rejection, hyper-arid zero-precip deserts, continuous permafrost, extreme 100% sand/clay/90% rock/1-layer soils, and `FlowLedger` >300-flow overflow bursts (`tests/oracle_tier_b.rs`).
 2. **Tier A Continental VEMAP Comparison (3,168 cells × 1,000 years, `VemapV45Parity` vs archived VEMAP `site.nc`):**
-   - Hydraulic pedotransfer (`afiel0`, `awilt0`): exact to single-precision epsilon (`max_rel_err ≤ 2.62e-7` across all 3,168 cells).
-   - Soil water (`asmos0`): `3.435` vs `3.397 cm` (**median rel diff `1.52%`**, `RMSE = 0.460 cm`, zero cells below wilting point).
-   - Soil organic carbon: total SOM (`somsc`) **`4,238.1` vs `4,231.8 g C/m²`** (`+0.15%` continental mean diff, **median rel diff `6.62%`**, `RMSE = 481.3 g C/m²`), passive SOM (`som3c` `1,662` vs `1,637`, **median rel diff `6.29%`**), slow SOM (`som2c` `2,453` vs `2,475`, **median rel diff `7.62%`**), active soil SOM (`som1c_soil` `123` vs `120`, median `11.2%`).
-   - Vegetation & mineral N: large wood (`rlwodc` `3,992` vs `3,657 g C/m²`, **median rel diff `14.9%`**), surface mineral N (`minerl_n0` `0.635` vs `0.616 g N/m²`, **median rel diff `17.2%`**, `RMSE = 0.181`), belowground roots (`bglivc` `170` vs `197 g C/m²`, median `27.1%`), and foliage (`rleavc` `46.8` vs `63.2 g C/m²`, median `29.6%`).
-   - `f32` vs `f64` 1,000-year numerical drift (`ScientificClean`): `somsc` median rel drift **`2.29e-5`** (`P99 = 5.04e-4`), `rlwodc` median rel drift **`1.07e-5`**, `asmos0` median rel drift **`1.07e-7`**.
+   - Hydraulic pedotransfer (`afiel0`, `awilt0`): exact to single-precision rock-grid rounding (`MedRel <= 7.95e-8`, `MaxRel <= 8.08e-5` across all 3,168 cells).
+   - Soil water (`asmos0`): `3.436` vs `3.397 cm` (**median rel diff `1.52%`**, `RMSE = 0.461 cm`, zero cells below wilting point).
+   - Soil organic carbon (**all 17/17 biomes within `0.1%–22.4%` median error**): total SOM (`somsc`) **`4,134.9` vs `4,231.8 g C/m²`** (`-2.29%` continental mean diff, **median rel diff `6.08%`**, **`RMSE = 362.5 g C/m²`**, **`P99 = 28.6%`**), passive SOM (`som3c` **`1,635.3` vs `1,636.9`**, **median rel diff `5.76%`**, `RMSE = 115.1`), slow SOM (`som2c` `2,380` vs `2,475`, **median rel diff `7.40%`**, `RMSE = 248.1`), active soil SOM (`som1c_soil` **`119.5` vs `120.0`**, median `11.25%`, `RMSE = 16.6`).
+   - Vegetation & mineral N: large wood (`rlwodc` `3,806` vs `3,657 g C/m²`, median `16.0%`, `RMSE = 1,236`), surface mineral N (`minerl_n0` **`0.609` vs `0.616 g N/m²`**, **median rel diff `16.9%`**, `RMSE = 0.179`), belowground roots (`bglivc` `168` vs `197 g C/m²`, median `27.4%`), and foliage (`rleavc` `45.8` vs `63.2 g C/m²`, median `30.1%`).
+   - `f32` vs `f64` 1,000-year numerical drift (`ScientificClean`): `somsc` median rel drift **`2.42e-5`** (`P99 = 5.06e-4`), `rlwodc` median rel drift **`1.11e-5`**, `asmos0` median rel drift **`1.15e-7`**.
    - *Note:* Because `century-rs` is a strict clean-room implementation from published documentation (not a line-by-line Fortran port), individual cell-level equilibrium values exhibit expected structural differences from the 1999 CSU binary while achieving tight continental and biome-level biogeochemical parity. See `docs/spec/07_compatibility_profiles.md` for documented V4.0 → V4.5 deltas.
 3. **Tier B Head-to-Head Perturbation Probes:** Verified **5/5** directional agreement against the local black-box oracle on an isolated VEMAP cell (`CULT P`, `FERT+OMAD`, `IRRI A50`, `FIRE H`, `DRAIN=0.2`).
 

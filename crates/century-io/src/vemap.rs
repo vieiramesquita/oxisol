@@ -59,12 +59,13 @@ pub struct PreloadedGrid<F: Float> {
     pub cells: Vec<PreloadedCell<F>>,
 }
 
-/// Map VEMAP biome ID to its biome-specific `fix.100` filename (from VEMAP documentation).
+/// Map VEMAP biome ID to its biome-specific `fix.100` filename (from VEMAP documentation
+/// and archived equilibrium SOM stoichiometry).
 pub fn vemap_fix_filename(biome_id: i32) -> &'static str {
     match biome_id {
         1 => "arcfix.100",
         2 => "borfix.100",
-        11 | 17 | 20 | 21 => "drygfix.100",
+        10 | 11 | 17 | 20 | 21 => "drygfix.100",
         19 => "drytrpfix.100",
         3..=7 => "ffix.100",
         13 | 14 | 15 | 18 => "gfix.100",

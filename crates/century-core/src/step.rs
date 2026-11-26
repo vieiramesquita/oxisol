@@ -250,13 +250,28 @@ pub fn initialize_cell<F: Float>(
         F::ZERO
     };
 
-    // 4. Initialize soil water per layer from relative water content `rwcf`.
+    // 4. Initialize soil water per layer from relative water content `rwcf` and populate `avh2o`.
+    let mut av_root = F::ZERO;
+    let mut av_prof = F::ZERO;
+    let mut av_top30 = F::ZERO;
+    let mut depth_acc = F::ZERO;
     for l in 0..derived.nlayer {
         let wp = derived.awilt[l] * derived.adep[l];
         let fc = derived.afiel[l] * derived.adep[l];
         let rw = site.rwcf[l].clamp_val(F::ZERO, F::ONE);
         state.asmos[l] = wp + rw * (fc - wp);
+        let av = (state.asmos[l] - wp).max(F::ZERO);
+        av_prof += av;
+        if l < derived.nlaypg {
+            av_root += av;
+        }
+        if depth_acc < f(30.0) {
+            let frac_in_30 = ((f(30.0) - depth_acc) / derived.adep[l]).clamp_val(F::ZERO, F::ONE);
+            av_top30 += av * frac_in_30;
+        }
+        depth_acc += derived.adep[l];
     }
+    state.avh2o = [av_root, av_prof, av_top30];
 
     // Ensure non-zero seed biomass if system has forest/crop so growth can initiate cleanly.
     if state.system.has_forest()
@@ -323,59 +338,7 @@ pub fn step_month<F: Float>(
     let n_events = schedule.events_for_buf(year, month, &mut events_buf);
     let mut resolved = ResolvedMonthEvents::default();
     for ev in events_buf[..n_events].iter().flatten() {
-        match ev {
-            EventKind::Crop(name) => {
-                resolved.crop = Some((name.as_str(), biome.crops.get(name.as_str())));
-            }
-            EventKind::Tree(name) => {
-                resolved.tree = Some((name.as_str(), biome.trees.get(name.as_str())));
-            }
-            EventKind::Frst => resolved.set_crpgrw = Some(true),
-            EventKind::Last => resolved.set_crpgrw = Some(false),
-            EventKind::Senm => resolved.senm = true,
-            EventKind::Pltm => {
-                resolved.set_crpgrw = Some(true);
-                resolved.planted = true;
-            }
-            EventKind::Tfst => resolved.set_forgrw = Some(true),
-            EventKind::Tlst => resolved.set_forgrw = Some(false),
-            EventKind::Irri(n) => {
-                resolved.irri = biome.irris.get(n.as_str());
-                resolved.has_any_mgmt = true;
-            }
-            EventKind::Fert(n) => {
-                resolved.fert = biome.ferts.get(n.as_str());
-                resolved.has_any_mgmt = true;
-            }
-            EventKind::Omad(n) => {
-                resolved.omad = biome.omads.get(n.as_str());
-                resolved.has_any_mgmt = true;
-            }
-            EventKind::Cult(n) => {
-                resolved.cult = biome.cults.get(n.as_str());
-                resolved.has_any_mgmt = true;
-            }
-            EventKind::Graz(n) => {
-                resolved.graz = biome.grazs.get(n.as_str());
-                resolved.has_any_mgmt = true;
-            }
-            EventKind::Harv(n) => {
-                resolved.harv = biome.harvs.get(n.as_str());
-                resolved.has_any_mgmt = true;
-            }
-            EventKind::Fire(n) => {
-                resolved.fire = biome.fires.get(n.as_str());
-                resolved.has_any_mgmt = true;
-            }
-            EventKind::Trem(n) => {
-                resolved.trem = biome.trems.get(n.as_str());
-                resolved.has_any_mgmt = true;
-            }
-            EventKind::Erod(r) => {
-                resolved.erod = Some(F::from_f64(*r));
-                resolved.has_any_mgmt = true;
-            }
-        }
+        resolved.apply_event(ev, biome);
     }
     step_month_resolved(
         state,
@@ -495,18 +458,6 @@ fn step_month_resolved<'a, F: Float>(
 
     ledger.clear();
 
-    // Seed crop if planted with zero live shoots.
-    if ev.planted && state.aglivc.total() < f(1.0) {
-        ledger.schedule(PoolId::ExternalInputC, PoolId::AglivC, f(2.0));
-        ledger.schedule(PoolId::ExternalInputC, PoolId::BglivC, f(2.0));
-        for e in 0..config.elements.nelem() {
-            let ce = [f(25.0), f(250.0), f(250.0)][e];
-            ledger.schedule(PoolId::ExternalInputE(e), PoolId::AglivE(e), f(2.0) / ce);
-            ledger.schedule(PoolId::ExternalInputE(e), PoolId::BglivE(e), f(2.0) / ce);
-        }
-        ledger.commit(state);
-    }
-
     let crop_params = cached.crop;
     let tree_params = cached.tree;
     let co2 = compute_co2_effects(co2_ppm, &biome.fix, crop_params, tree_params);
@@ -622,6 +573,12 @@ fn step_month_resolved<'a, F: Float>(
 
     if state.system.has_crop() {
         if let Some(cp) = crop_params {
+            // Apply planting-month potential production reduction factor `pltmrf` (Manual A2-2).
+            let crop_shade_and_pltm = if ev.planted && cp.pltmrf > F::ZERO {
+                tree_shade_fac * cp.pltmrf.clamp_val(F::ZERO, F::ONE)
+            } else {
+                tree_shade_fac
+            };
             step_crop(
                 state,
                 derived,
@@ -629,7 +586,7 @@ fn step_month_resolved<'a, F: Float>(
                 cp,
                 weather,
                 hydro.rel_water_root,
-                tree_shade_fac,
+                crop_shade_and_pltm,
                 grass_n_share,
                 &co2,
                 config.elements,
@@ -1000,8 +957,8 @@ mod tests {
             "PLOW".into(),
             CultParams {
                 name: "PLOW".into(),
-                cultra: [0.2, 0.5, 0.2, 0.5, 0.6, 0.6, 0.3],
-                clteff: [1.5, 1.5, 1.5, 1.5],
+                cultra: [0.0, 0.1, 0.9, 0.1, 0.9, 0.9, 1.0],
+                clteff: [1.6, 1.6, 1.6, 1.6],
             },
         );
         b.ferts.insert(
@@ -1040,11 +997,11 @@ mod tests {
             "GRAIN".into(),
             HarvParams {
                 name: "GRAIN".into(),
-                aglrem: 0.9,
-                bglrem: 0.5,
+                aglrem: 0.0,
+                bglrem: 0.0,
                 flghrv: 1,
-                rmvstr: 0.3,
-                remwsd: 0.2,
+                rmvstr: 0.5,
+                remwsd: 0.5,
                 hibg: 0.0,
             },
         );
@@ -1073,9 +1030,13 @@ mod tests {
             TremParams {
                 name: "LOG".into(),
                 evntyp: 0,
-                remf: [0.8, 0.7, 0.85, 0.3, 0.3],
-                fd: [0.6, 0.5],
-                retf: [[0.2; 4]; 3],
+                remf: [0.9, 0.8, 0.85, 0.0, 0.0],
+                fd: [0.7, 0.2],
+                retf: [
+                    [1.0, 1.0, 1.0, 1.0],
+                    [1.0, 1.0, 1.0, 1.0],
+                    [0.0, 0.0, 0.0, 0.0],
+                ],
             },
         );
         b
@@ -1390,7 +1351,7 @@ mod tests {
                         ScheduledEvent {
                             rel_year: 1,
                             month: 9,
-                            kind: EventKind::Fire("HOT".into()),
+                            kind: EventKind::Fire("BURN".into()),
                         },
                     ],
                 },
@@ -1569,6 +1530,248 @@ mod tests {
         assert!(
             rem > 90.0 && rem < 105.0,
             "Mixed deciduous/evergreen canopy should drop 50% ONCE per autumn, got rleavc={rem}"
+        );
+    }
+
+    #[test]
+    fn southern_hemisphere_deciduous_drops_leaves_in_austral_autumn_not_spring() {
+        let mut biome = synthetic_biome_f64();
+        let mut mixed = TreeParams::<f64> {
+            name: "MIXED".into(),
+            decid: 1,
+            leafdr: [0.01; 12],
+            ..TreeParams::default()
+        };
+        mixed.wooddr[0] = 0.50;
+        biome.trees.insert("MIXED".into(), mixed);
+        biome.site_defaults.rlvcis = [200.0, 0.0];
+        biome.site_defaults.rleave = [5.0, 0.5, 0.5];
+        biome.site_defaults.rlwcis = [5000.0, 0.0];
+        biome.site_defaults.rlwode = [25.0, 2.5, 2.5];
+
+        let mut cell_in = CellSiteInput::from_site(&biome.site_defaults);
+        cell_in.lat = -35.0; // Southern Hemisphere (austral autumn = months 4..=6)
+        let cool_autumn = [MonthlyWeather {
+            precip_cm: 6.0,
+            tmin_c: 0.0,
+            tmax_c: 8.0,
+        }; 12];
+        let sched = Schedule {
+            initial_system: SystemKind::Forest,
+            initial_tree: "MIXED".into(),
+            blocks: vec![ScheduleBlock {
+                block_num: 1,
+                label: "Austral Autumn".into(),
+                end_year: 2,
+                repeat_years: 1,
+                weather_mode: 'M',
+                events: vec![ScheduledEvent {
+                    rel_year: 1,
+                    month: 5,
+                    kind: EventKind::Senm,
+                }],
+            }],
+            ..Schedule::default()
+        };
+        let cfg = SimConfig::default();
+        let (mut st, der) = initialize_cell(&biome, &cell_in, &cool_autumn, &sched, &cfg);
+        st.forgrw = false;
+        let mut sel = ActiveSelection::from_schedule(&sched);
+        let co2 = biome.fix.co2ppm[0];
+
+        // Austral autumn months 4, 5, 6 should trigger leaf drop ONCE (not reset mid-autumn).
+        for month in [4u8, 5, 6] {
+            let _ = step_month(
+                &mut st,
+                &der,
+                &biome,
+                &mut sel,
+                &sched,
+                &cool_autumn[(month - 1) as usize],
+                1,
+                month,
+                co2,
+                &cfg,
+            );
+        }
+        let rem = st.rleavc.total();
+        assert!(
+            rem > 90.0 && rem < 105.0,
+            "Southern Hemisphere deciduous forest should drop 50% ONCE in months 4..=6, got rleavc={rem}"
+        );
+        // Austral spring (months 9, 10) must reset latch without triggering another autumn drop.
+        for month in [9u8, 10] {
+            let _ = step_month(
+                &mut st,
+                &der,
+                &biome,
+                &mut sel,
+                &sched,
+                &cool_autumn[(month - 1) as usize],
+                1,
+                month,
+                co2,
+                &cfg,
+            );
+        }
+        assert!(
+            st.rleavc.total() > 85.0 && !st.decid_dropped,
+            "Austral spring must reset decid_dropped without dropping leaves, got rleavc={}",
+            st.rleavc.total()
+        );
+    }
+
+    #[test]
+    fn management_harv_cult_trem_match_century_manual_parameter_semantics() {
+        let mut biome = synthetic_biome_f64();
+        let crop = biome.crops.get("TMC3").unwrap().clone();
+        let tree = biome.trees.get("MTCF").unwrap().clone();
+        biome.site_defaults.aglcis = [100.0, 0.0];
+        biome.site_defaults.aglive = [4.0, 0.4, 0.4];
+        biome.site_defaults.bglcis = [80.0, 0.0];
+        biome.site_defaults.bglive = [2.0, 0.2, 0.2];
+        biome.site_defaults.stdcis = [50.0, 0.0];
+        biome.site_defaults.stdede = [1.0, 0.1, 0.1];
+        biome.site_defaults.rlvcis = [200.0, 0.0];
+        biome.site_defaults.rleave = [4.0, 0.4, 0.4];
+        biome.site_defaults.fbrcis = [300.0, 0.0];
+        biome.site_defaults.fbrche = [3.0, 0.3, 0.3];
+        biome.site_defaults.rlwcis = [1000.0, 0.0];
+        biome.site_defaults.rlwode = [5.0, 0.5, 0.5];
+
+        let cell_in = CellSiteInput::from_site(&biome.site_defaults);
+        let w = sample_weather_f64();
+        let sched = Schedule::default();
+        let cfg = SimConfig {
+            elements: ElementMode::FullCnps,
+            ..SimConfig::default()
+        };
+
+        // 1. HARV ANN (AGLREM=0, BGLREM=0 -> 100% affected / killed, Manual p. A2-17).
+        let (mut st_h, _der) = initialize_cell(&biome, &cell_in, &w, &sched, &cfg);
+        let mut ledger = FlowLedger::<f64>::new();
+        let ann_harv = HarvParams {
+            name: "ANN".into(),
+            aglrem: 0.0,
+            bglrem: 0.0,
+            flghrv: 0,
+            rmvstr: 0.0,
+            remwsd: 0.5,
+            hibg: 0.0,
+        };
+        apply_harvest(
+            &mut st_h,
+            &biome.fix,
+            &crop,
+            &ann_harv,
+            ElementMode::FullCnps,
+            &mut ledger,
+        );
+        assert!(
+            st_h.aglivc.total() < 1.0e-9 && st_h.bglivc.total() < 1.0e-9,
+            "HARV ANN (aglrem=0, bglrem=0) must terminate 100% of live shoots and roots: ag={} bg={}",
+            st_h.aglivc.total(),
+            st_h.bglivc.total()
+        );
+
+        // 2. CULT P (CULTRA = [0.0, 0.1, 0.9, 0.1, 0.9, 0.9, 1.0], Manual p. A2-4).
+        let (mut st_c, _) = initialize_cell(&biome, &cell_in, &w, &sched, &cfg);
+        let plow = biome.cults.get("PLOW").unwrap().clone();
+        apply_cultivation(
+            &mut st_c,
+            &biome.fix,
+            &plow,
+            ElementMode::FullCnps,
+            &mut ledger,
+        );
+        assert!(
+            st_c.aglivc.total() < 1.0e-9 && st_c.bglivc.total() < 1.0e-9,
+            "CULT P must plow down 100% of shoots (0.1 surf + 0.9 soil) and roots: ag={} bg={}",
+            st_c.aglivc.total(),
+            st_c.bglivc.total()
+        );
+
+        // 3. TREM BURN (RETF[part][C,N,P,S] = [0.0, 0.30, 1.00, 0.00], Manual p. A2-24).
+        let (mut st_t, _) = initialize_cell(&biome, &cell_in, &w, &sched, &cfg);
+        let burn = TremParams {
+            name: "BURN".into(),
+            evntyp: 1,
+            remf: [0.9, 0.9, 0.7, 0.7, 0.7],
+            fd: [0.9, 0.7],
+            retf: [
+                [0.0, 0.30, 1.0, 0.0],
+                [0.0, 0.30, 1.0, 0.0],
+                [0.0, 0.30, 1.0, 0.0],
+            ],
+        };
+        let min_n_before = st_t.minerl[0][0];
+        let min_p_before = st_t.minerl[0][1];
+        apply_trem(
+            &mut st_t,
+            &biome.fix,
+            Some(&tree),
+            &burn,
+            ElementMode::FullCnps,
+            &mut ledger,
+        );
+        // Expected N ash = 0.30 * (0.9*4.0 + 0.9*3.0 + 0.7*5.0) = 0.30 * 9.8 = 2.94 g N/m2.
+        let n_ash = st_t.minerl[0][0] - min_n_before;
+        let p_ash = st_t.minerl[0][1] - min_p_before;
+        assert!(
+            (n_ash - 2.94).abs() < 1.0e-9,
+            "TREM BURN must return 30% of burned N as ash (2.94), got {n_ash}"
+        );
+        assert!(
+            (p_ash - 0.98).abs() < 1.0e-9,
+            "TREM BURN must return 100% of burned P as ash (0.98), got {p_ash}"
+        );
+    }
+
+    #[test]
+    fn direct_transfers_reject_non_finite_and_compiled_block_guards_year_range() {
+        use crate::ledger::{
+            export_c_direct, export_e_direct, transfer_c_direct, transfer_e_direct,
+        };
+
+        let mut src_c = CarbonPool::from_total(100.0f64, 0.0);
+        let mut dst_c = CarbonPool::from_total(10.0f64, 0.0);
+        let mut out_c = 0.0f64;
+        assert_eq!(transfer_c_direct(&mut src_c, &mut dst_c, f64::NAN), 0.0);
+        assert_eq!(export_c_direct(&mut src_c, &mut out_c, f64::INFINITY), 0.0);
+        assert_eq!(src_c.total(), 100.0);
+
+        let mut src_e = 5.0f64;
+        let mut dst_e = 1.0f64;
+        let mut out_e = 0.0f64;
+        assert_eq!(transfer_e_direct(&mut src_e, &mut dst_e, f64::NAN), 0.0);
+        assert_eq!(export_e_direct(&mut src_e, &mut out_e, f64::INFINITY), 0.0);
+        assert_eq!(src_e, 5.0);
+
+        // CompiledBlock::events_for must return default (not wrap usize) when year < start_year.
+        let biome = synthetic_biome_f64();
+        let sched = Schedule {
+            start_year: 1900,
+            last_year: 2000,
+            ..Schedule::default()
+        };
+        let compiled = CompiledSchedule::build(&sched, &biome);
+        let ev_before = compiled.blocks[0].events_for(1850, 4);
+        assert!(ev_before.set_crpgrw.is_none() && !ev_before.has_any_mgmt);
+
+        // initialize_cell must populate avh2o from initial rwcf so Month 1 Year 1 is accurate.
+        let mut b2 = synthetic_biome_f64();
+        b2.site_defaults.rwcf = [0.5; crate::params::MAX_LAYERS];
+        let (st, _der) = initialize_cell(
+            &b2,
+            &CellSiteInput::from_site(&b2.site_defaults),
+            &sample_weather_f64(),
+            &Schedule::default(),
+            &SimConfig::default(),
+        );
+        assert!(
+            st.avh2o[0] > 0.0 && st.avh2o[2] > 0.0,
+            "initialize_cell must initialize avh2o from rwcf, got {:?}",
+            st.avh2o
         );
     }
 }

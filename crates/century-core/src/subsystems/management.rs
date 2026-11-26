@@ -136,6 +136,15 @@ pub fn apply_omad<F: Float>(
 }
 
 /// Apply cultivation / tillage (`CULT`): incorporates surface residues and sets `clteff`.
+///
+/// Honors official CENTURY V4 `CULTRA(1..7)` definitions (Manual Appendix 2.2 p. A2-4):
+/// - `cultra[0]`: fraction of aboveground live transferred to standing dead
+/// - `cultra[1]`: fraction of aboveground live transferred to surface litter
+/// - `cultra[2]`: fraction of aboveground live transferred to soil litter (top soil layer)
+/// - `cultra[3]`: fraction of standing dead transferred to surface litter
+/// - `cultra[4]`: fraction of standing dead transferred to soil litter (top soil layer)
+/// - `cultra[5]`: fraction of surface litter (structural & metabolic) transferred to soil litter
+/// - `cultra[6]`: fraction of live roots transferred to soil litter (top soil layer)
 pub fn apply_cultivation<F: Float>(
     state: &mut CellState<F>,
     fix: &FixParams<F>,
@@ -143,7 +152,6 @@ pub fn apply_cultivation<F: Float>(
     elements: ElementMode,
     ledger: &mut FlowLedger<F>,
 ) {
-    let f = F::from_f64;
     let nelem = elements.nelem();
 
     // Activate decomposition multipliers for 1 month (decaying back to 1.0 afterwards).
@@ -155,11 +163,22 @@ pub fn apply_cultivation<F: Float>(
     ];
     state.cult_months = 1;
 
-    // 1. Live shoots -> surface litter (`cultra[0]`) and soil litter (`cultra[1]`).
+    // 1. Live shoots -> standing dead (`cultra[0]`), surface litter (`cultra[1]`),
+    //    and soil litter (`cultra[2]`).
     let agc = state.aglivc.total();
     if agc > F::EPS_GUARD {
-        let f_surf = cult.cultra[0].clamp_val(F::ZERO, F::ONE);
-        let f_soil = cult.cultra[1].clamp_val(F::ZERO, (F::ONE - f_surf).max(F::ZERO));
+        let f_sd = cult.cultra[0].clamp_val(F::ZERO, F::ONE);
+        let f_surf = cult.cultra[1].clamp_val(F::ZERO, (F::ONE - f_sd).max(F::ZERO));
+        let f_soil = cult.cultra[2].clamp_val(F::ZERO, (F::ONE - f_sd - f_surf).max(F::ZERO));
+        if f_sd > F::ZERO {
+            ledger.schedule(PoolId::AglivC, PoolId::StdedC, agc * f_sd);
+            for e in 0..nelem {
+                let ea = state.aglive[e] * f_sd;
+                if ea > F::ZERO {
+                    ledger.schedule(PoolId::AglivE(e), PoolId::StdedE(e), ea);
+                }
+            }
+        }
         if f_surf > F::ZERO {
             let mut ea = [F::ZERO; MAX_ELEM];
             for e in 0..nelem {
@@ -201,11 +220,11 @@ pub fn apply_cultivation<F: Float>(
     }
     ledger.commit(state);
 
-    // 2. Standing dead -> surface (`cultra[2]`) and soil (`cultra[3]`).
+    // 2. Standing dead -> surface litter (`cultra[3]`) and soil litter (`cultra[4]`).
     let sdc = state.stdedc.total();
     if sdc > F::EPS_GUARD {
-        let f_surf = cult.cultra[2].clamp_val(F::ZERO, F::ONE);
-        let f_soil = cult.cultra[3].clamp_val(F::ZERO, (F::ONE - f_surf).max(F::ZERO));
+        let f_surf = cult.cultra[3].clamp_val(F::ZERO, F::ONE);
+        let f_soil = cult.cultra[4].clamp_val(F::ZERO, (F::ONE - f_surf).max(F::ZERO));
         if f_surf > F::ZERO {
             let mut ea = [F::ZERO; MAX_ELEM];
             for e in 0..nelem {
@@ -247,10 +266,10 @@ pub fn apply_cultivation<F: Float>(
     }
     ledger.commit(state);
 
-    // 3. Surface structural & metabolic incorporation into soil litter (`cultra[4]`, `cultra[5]`).
-    let f_sstr = cult.cultra[4].clamp_val(F::ZERO, f(0.95));
-    if f_sstr > F::ZERO && state.strucc[0].total() > F::EPS_GUARD {
-        let c_mv = state.strucc[0].total() * f_sstr;
+    // 3. Surface litter (structural & metabolic) incorporation into soil litter (`cultra[5]`).
+    let f_slit = cult.cultra[5].clamp_val(F::ZERO, F::ONE);
+    if f_slit > F::ZERO && state.strucc[0].total() > F::EPS_GUARD {
+        let c_mv = state.strucc[0].total() * f_slit;
         let old_soil = state.strucc[1].total();
         if old_soil + c_mv > F::EPS_GUARD {
             state.strlig[1] =
@@ -261,28 +280,27 @@ pub fn apply_cultivation<F: Float>(
             ledger.schedule(
                 PoolId::StrucE(0, e),
                 PoolId::StrucE(1, e),
-                state.struce[0][e] * f_sstr,
+                state.struce[0][e] * f_slit,
             );
         }
     }
-    let f_smet = cult.cultra[5].clamp_val(F::ZERO, f(0.95));
-    if f_smet > F::ZERO && state.metabc[0].total() > F::EPS_GUARD {
+    if f_slit > F::ZERO && state.metabc[0].total() > F::EPS_GUARD {
         ledger.schedule(
             PoolId::MetabC(0),
             PoolId::MetabC(1),
-            state.metabc[0].total() * f_smet,
+            state.metabc[0].total() * f_slit,
         );
         for e in 0..nelem {
             ledger.schedule(
                 PoolId::MetabE(0, e),
                 PoolId::MetabE(1, e),
-                state.metabe[0][e] * f_smet,
+                state.metabe[0][e] * f_slit,
             );
         }
     }
 
     // 4. Live root kill (`cultra[6]`) -> soil litter.
-    let f_bg = cult.cultra[6].clamp_val(F::ZERO, f(0.95));
+    let f_bg = cult.cultra[6].clamp_val(F::ZERO, F::ONE);
     let bgc = state.bglivc.total();
     if f_bg > F::ZERO && bgc > F::EPS_GUARD {
         let mut ea = [F::ZERO; MAX_ELEM];
@@ -407,6 +425,10 @@ pub fn apply_grazing<F: Float>(
 
 /// Apply harvest event (`HARV`): grain harvest with moisture-stressed HI, straw removal,
 /// residue return, root harvest, and N volatilization.
+///
+/// Honors official CENTURY V4 `harv.100` definitions (Manual Appendix 2.7 p. A2-17):
+/// `aglrem` and `bglrem` are the fractions of live shoots and roots **remaining unaffected**
+/// by harvest (`0.0` = 100% harvested/killed, e.g. grain/annual crops; `0.2`/`0.9` = hay).
 pub fn apply_harvest<F: Float>(
     state: &mut CellState<F>,
     fix: &FixParams<F>,
@@ -417,7 +439,8 @@ pub fn apply_harvest<F: Float>(
 ) {
     let nelem = elements.nelem();
     let agc = state.aglivc.total();
-    let f_aff = harv.aglrem.clamp_val(F::ZERO, F::ONE);
+    // `aglrem` is fraction of aboveground live NOT affected by harvest (Manual p. A2-17).
+    let f_aff = (F::ONE - harv.aglrem.clamp_val(F::ZERO, F::ONE)).max(F::ZERO);
 
     if agc > F::EPS_GUARD && f_aff > F::ZERO {
         let mut c_grain = F::ZERO;
@@ -504,9 +527,9 @@ pub fn apply_harvest<F: Float>(
     }
     ledger.commit(state);
 
-    // 3. Belowground root harvest / kill.
+    // 3. Belowground root harvest / kill (`bglrem` is fraction NOT affected, Manual p. A2-17).
     let bgc = state.bglivc.total();
-    let f_bg = harv.bglrem.clamp_val(F::ZERO, F::ONE);
+    let f_bg = (F::ONE - harv.bglrem.clamp_val(F::ZERO, F::ONE)).max(F::ZERO);
     if bgc > F::EPS_GUARD && f_bg > F::ZERO {
         let c_bg_aff = bgc * f_bg;
         let c_bg_exp = c_bg_aff * harv.hibg.clamp_val(F::ZERO, F::ONE);
@@ -622,6 +645,10 @@ pub fn apply_fire<F: Float>(
 }
 
 /// Apply tree removal / logging / canopy fire (`TREM`).
+///
+/// Honors official CENTURY V4 `trem.100` `RETF(part, elem)` indexing (Manual Appendix 2.11 p. A2-24):
+/// - `part`: `0 = leaves`, `1 = fine branches`, `2 = large wood`
+/// - `elem`: `0 = C`, `1 = N`, `2 = P`, `3 = S`
 pub fn apply_trem<F: Float>(
     state: &mut CellState<F>,
     fix: &FixParams<F>,
@@ -640,48 +667,73 @@ pub fn apply_trem<F: Float>(
         F::from_f64(0.30),
     ]);
 
-    // 1. Leaves (`remf[0]`): removed/burned or slash -> surface litter.
+    // 1. Leaves (`remf[0]`, `retf[0][0..4]`): burned (ash to mineral) or cut (slash to surface litter).
     let f_lv = trem.remf[0].clamp_val(F::ZERO, F::ONE);
     let lv_c = state.rleavc.total();
     if f_lv > F::ZERO && lv_c > F::EPS_GUARD {
-        let c_rem = lv_c * f_lv;
+        let c_aff = lv_c * f_lv;
         if is_burn {
-            ledger.schedule(PoolId::RleavC, PoolId::ExportC, c_rem);
-            state.month_c_removed += c_rem;
+            ledger.schedule(PoolId::RleavC, PoolId::ExportC, c_aff);
+            state.month_c_removed += c_aff;
             for e in 0..nelem {
                 let er = state.rleave[e] * f_lv;
-                let ret = er * trem.retf[e][0].clamp_val(F::ZERO, F::ONE);
+                let ret = er * trem.retf[0][e + 1].clamp_val(F::ZERO, F::ONE);
                 let vol = (er - ret).max(F::ZERO);
                 if ret > F::ZERO {
                     ledger.schedule(PoolId::RleavE(e), PoolId::Minerl(0, e), ret);
                 }
                 if vol > F::ZERO {
                     ledger.schedule(PoolId::RleavE(e), PoolId::ExportE(e), vol);
+                    if e == 0 {
+                        state.month_n_volat += vol;
+                    }
                 }
             }
         } else {
-            let mut ea = [F::ZERO; MAX_ELEM];
-            for e in 0..nelem {
-                ea[e] = state.rleave[e] * f_lv;
+            let ret_c = trem.retf[0][0].clamp_val(F::ZERO, F::ONE);
+            let c_lit = c_aff * ret_c;
+            let c_exp = (c_aff - c_lit).max(F::ZERO);
+            if c_exp > F::ZERO {
+                ledger.schedule(PoolId::RleavC, PoolId::ExportC, c_exp);
+                state.month_c_removed += c_exp;
             }
-            partition_residue(
-                state,
-                fix,
-                0,
-                PoolId::RleavC,
-                [PoolId::RleavE(0), PoolId::RleavE(1), PoolId::RleavE(2)],
-                c_rem,
-                ea,
-                wdlig[0],
-                None,
-                elements,
-                ledger,
-            );
+            let mut e_lit = [F::ZERO; MAX_ELEM];
+            for e in 0..nelem {
+                let er = state.rleave[e] * f_lv;
+                let ret = er * trem.retf[0][e + 1].clamp_val(F::ZERO, F::ONE);
+                let exp = (er - ret).max(F::ZERO);
+                if exp > F::ZERO {
+                    ledger.schedule(PoolId::RleavE(e), PoolId::ExportE(e), exp);
+                }
+                e_lit[e] = ret;
+            }
+            if c_lit > F::EPS_GUARD {
+                partition_residue(
+                    state,
+                    fix,
+                    0,
+                    PoolId::RleavC,
+                    [PoolId::RleavE(0), PoolId::RleavE(1), PoolId::RleavE(2)],
+                    c_lit,
+                    e_lit,
+                    wdlig[0],
+                    None,
+                    elements,
+                    ledger,
+                );
+            } else {
+                for e in 0..nelem {
+                    if e_lit[e] > F::ZERO {
+                        ledger.schedule(PoolId::RleavE(e), PoolId::Minerl(0, e), e_lit[e]);
+                    }
+                }
+            }
         }
     }
     ledger.commit(state);
 
-    // 2. Fine branches (`remf[1]`), Large wood (`remf[2]`), Wood1 (`remf[3]`), Wood2 (`remf[4]`).
+    // 2. Live fine branches (`remf[1]`, part 1), Live large wood (`remf[2]`, part 2),
+    //    Dead fine branches (`remf[3]`, part 1), Dead large wood (`remf[4]`, part 2).
     let wood_ops = [
         (
             trem.remf[1],
@@ -711,7 +763,7 @@ pub fn apply_trem<F: Float>(
             None,
             [PoolId::Wood1E(0), PoolId::Wood1E(1), PoolId::Wood1E(2)],
             None,
-            3usize,
+            1usize,
         ),
         (
             trem.remf[4],
@@ -721,40 +773,61 @@ pub fn apply_trem<F: Float>(
             None,
             [PoolId::Wood2E(0), PoolId::Wood2E(1), PoolId::Wood2E(2)],
             None,
-            3usize,
+            2usize,
         ),
     ];
 
-    for (rem_f, c_tot, e_tot, src_c, slash_c, src_e, slash_e, ret_col) in wood_ops {
+    for (rem_f, c_tot, e_tot, src_c, slash_c, src_e, slash_e, part_idx) in wood_ops {
         let frac = rem_f.clamp_val(F::ZERO, F::ONE);
         if frac > F::ZERO && c_tot > F::EPS_GUARD {
-            let c_rem = c_tot * frac;
-            ledger.schedule(src_c, PoolId::ExportC, c_rem);
-            state.month_c_removed += c_rem;
-            for e in 0..nelem {
-                let er = e_tot[e] * frac;
-                if is_burn {
-                    let ash = er * trem.retf[e][ret_col].clamp_val(F::ZERO, F::ONE);
+            let c_aff = c_tot * frac;
+            if is_burn {
+                ledger.schedule(src_c, PoolId::ExportC, c_aff);
+                state.month_c_removed += c_aff;
+                for e in 0..nelem {
+                    let er = e_tot[e] * frac;
+                    let ash = er * trem.retf[part_idx][e + 1].clamp_val(F::ZERO, F::ONE);
                     let vol = (er - ash).max(F::ZERO);
                     if ash > F::ZERO {
                         ledger.schedule(src_e[e], PoolId::Minerl(0, e), ash);
                     }
                     if vol > F::ZERO {
                         ledger.schedule(src_e[e], PoolId::ExportE(e), vol);
-                    }
-                } else {
-                    ledger.schedule(src_e[e], PoolId::ExportE(e), er);
-                }
-            }
-            // In non-burn cutting, remaining fraction of live wood can enter dead wood slash if clearcut.
-            if !is_burn && frac > F::from_f64(0.5) {
-                if let (Some(sc), Some(se)) = (slash_c, slash_e) {
-                    let slash_frac = (F::ONE - frac) * F::from_f64(0.5);
-                    if slash_frac > F::ZERO {
-                        ledger.schedule(src_c, sc, c_tot * slash_frac);
-                        for e in 0..nelem {
-                            ledger.schedule(src_e[e], se[e], e_tot[e] * slash_frac);
+                        if e == 0 {
+                            state.month_n_volat += vol;
                         }
+                    }
+                }
+            } else if let (Some(sc), Some(se)) = (slash_c, slash_e) {
+                let ret_c = trem.retf[part_idx][0].clamp_val(F::ZERO, F::ONE);
+                let c_slash = c_aff * ret_c;
+                let c_exp = (c_aff - c_slash).max(F::ZERO);
+                if c_slash > F::ZERO {
+                    ledger.schedule(src_c, sc, c_slash);
+                }
+                if c_exp > F::ZERO {
+                    ledger.schedule(src_c, PoolId::ExportC, c_exp);
+                    state.month_c_removed += c_exp;
+                }
+                for e in 0..nelem {
+                    let er = e_tot[e] * frac;
+                    let e_slash = er * trem.retf[part_idx][e + 1].clamp_val(F::ZERO, F::ONE);
+                    let e_exp = (er - e_slash).max(F::ZERO);
+                    if e_slash > F::ZERO {
+                        ledger.schedule(src_e[e], se[e], e_slash);
+                    }
+                    if e_exp > F::ZERO {
+                        ledger.schedule(src_e[e], PoolId::ExportE(e), e_exp);
+                    }
+                }
+            } else {
+                // Dead wood removal during cutting exports removed fraction.
+                ledger.schedule(src_c, PoolId::ExportC, c_aff);
+                state.month_c_removed += c_aff;
+                for e in 0..nelem {
+                    let er = e_tot[e] * frac;
+                    if er > F::ZERO {
+                        ledger.schedule(src_e[e], PoolId::ExportE(e), er);
                     }
                 }
             }

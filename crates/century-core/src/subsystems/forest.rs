@@ -83,9 +83,17 @@ pub fn step_forest<F: Float>(
 ) -> F {
     let f = F::from_f64;
     let lai = compute_tree_lai(state, tree);
+    // Hemisphere-normalized seasonal month (1..=12 where 1=mid-winter, 7=mid-summer, 10=autumn)
+    // so deciduous autumn abscission and spring reset work symmetrically for lat < 0.
+    let m_clamped = month.clamp(1, 12);
+    let hemi_month = if derived.lat < F::ZERO {
+        ((m_clamped + 5) % 12) + 1
+    } else {
+        m_clamped
+    };
 
     // Reset annual deciduous leaf-drop latch during spring/summer warm months.
-    if month <= 6 || (month <= 8 && state.stemp > f(10.0) && !state.senm) {
+    if hemi_month <= 6 || (hemi_month <= 8 && state.stemp > f(10.0) && !state.senm) {
         state.decid_dropped = false;
     }
 
@@ -312,7 +320,9 @@ pub fn step_forest<F: Float>(
     let leaf_c = state.rleavc.total();
     let is_decid_drop = tree.decid == 1
         && !state.decid_dropped
-        && (state.senm || (!state.forgrw && month >= 9) || (month >= 10 && state.stemp < f(8.0)));
+        && (state.senm
+            || (!state.forgrw && hemi_month >= 9)
+            || (hemi_month >= 10 && state.stemp < f(8.0)));
     let ldr = if is_decid_drop {
         state.decid_dropped = true;
         let drop_rate = if tree.wooddr[0] > f(0.05) {

@@ -33,11 +33,11 @@ pub enum CompatibilityProfile {
 Neither profile uses global mutable variables (`static mut` or COMMON blocks). Every cell's state (`CellState<F>`) and derived soil parameters (`CellDerivedParams<F>`) are completely isolated on the stack or in per-thread heap slices, enabling deterministic, bit-reproducible execution across 1 to 256+ CPU cores (Ryzen 7 5700X through dual-socket AMD EPYC + 512 GB RAM servers).
 
 ## 4. Verified Black-Box Parity Summary (Continental US VEMAP, 3,168 Cells × 1,000 Years)
-Evaluated with `VemapV45Parity` (`f32`) against archived VEMAP `site.nc`:
-- **Hydraulic pedotransfer (`afiel0`, `awilt0`):** exact to IEEE `f32` epsilon (`MedRel = 0.0`, `MaxRel <= 2.62e-7`).
-- **Top-layer soil water (`asmos0`):** `3.435` vs `3.397 cm` (`MedRel = 1.52%`, `RMSE = 0.460 cm`).
-- **Total soil organic carbon (`somsc`):** `4,238.1` vs `4,231.8 g C/m²` (`+0.15%` continental mean diff, `MedRel = 6.62%`, `RMSE = 481.3 g C/m²`).
-- **Slow & passive SOM (`som2c`, `som3c`):** `som2c` `2,453` vs `2,475 g C/m²` (`MedRel = 7.62%`), `som3c` `1,662` vs `1,637 g C/m²` (`MedRel = 6.29%`).
-- **Large wood & surface mineral N (`rlwodc`, `minerl_n0`):** `rlwodc` `3,992` vs `3,657 g C/m²` (`MedRel = 14.90%`), `minerl_n0` `0.635` vs `0.616 g N/m²` (`MedRel = 17.18%`, `RMSE = 0.181`).
-- **`f32`-vs-`f64` 1,000-year drift (`ScientificClean`):** `somsc` `MedRel = 2.29e-5` (`P99 = 5.04e-4`), `rlwodc` `MedRel = 1.07e-5`, `asmos0` `MedRel = 1.07e-7`.
+Evaluated with `VemapV45Parity` (`f32`) against archived VEMAP `site.nc` (**all 17/17 biomes within `0.1%–22.4%` median `somsc` error**):
+- **Hydraulic pedotransfer (`afiel0`, `awilt0`):** exact to single-precision rock-grid rounding (`MedRel <= 7.95e-8`, `MaxRel <= 8.08e-5`).
+- **Top-layer soil water (`asmos0`):** `3.436` vs `3.397 cm` (`MedRel = 1.52%`, `RMSE = 0.461 cm`).
+- **Total soil organic carbon (`somsc`):** `4,134.9` vs `4,231.8 g C/m²` (`-2.29%` continental mean diff, `MedRel = 6.08%`, `RMSE = 362.5 g C/m²`, `P99 = 28.6%`).
+- **Slow, passive, & active SOM (`som2c`, `som3c`, `som1c_soil`):** `som2c` `2,380` vs `2,475 g C/m²` (`MedRel = 7.40%`, `RMSE = 248.1`), `som3c` `1,635` vs `1,637 g C/m²` (`MedRel = 5.76%`, `RMSE = 115.1`), `som1c_soil` `119.5` vs `120.0 g C/m²` (`MedRel = 11.25%`, `RMSE = 16.6`).
+- **Large wood & surface mineral N (`rlwodc`, `minerl_n0`):** `rlwodc` `3,806` vs `3,657 g C/m²` (`MedRel = 16.03%`, `RMSE = 1,236`), `minerl_n0` `0.609` vs `0.616 g N/m²` (`MedRel = 16.94%`, `RMSE = 0.179`).
+- **`f32`-vs-`f64` 1,000-year drift (`ScientificClean`):** `somsc` `MedRel = 2.42e-5` (`P99 = 5.06e-4`), `rlwodc` `MedRel = 1.11e-5`, `asmos0` `MedRel = 1.15e-7`.
 - **Tier B head-to-head perturbation probes (5/5 directional agreement):** `CULT P`, `FERT+OMAD`, `IRRI A50`, `FIRE H`, and `DRAIN=0.2` all match the local black-box oracle's response direction on an isolated VEMAP cell.

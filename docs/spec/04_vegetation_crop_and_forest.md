@@ -52,7 +52,7 @@ Allocation can switch between juvenile (`fcfrac[*,0]`) and mature (`fcfrac[*,1]`
 In pure forests, trees access full root-zone mineral nutrients (`minerl[0..nlaypg][e]`) plus internal tree storage `forstg[e]` and symbiotic forest N fixation (`snfxmx[1]`). In savanna systems (`SystemKind::Savanna`), available soil mineral nutrients are partitioned symmetrically between trees (`tree_n_share` from basal area `rlwodc * 2.5 / basfct` relative to `sitpot`) and understory grass (`1 - tree_n_share`) while Beer-Lambert canopy shading attenuates grass light availability. Target C:E limits are defined per component in `cerfor[min/max][comp][e]`.
 
 ### 2.4 Forest Mortality and Litterfall (`wdeath`)
-- Monthly leaf drop (`leafdr[month]` for evergreen stands; once-per-autumn abscission fraction `wooddr[0]` for `decid == 1` deciduous and mixed stands) transfers `rleavc` $\to$ surface litter (`strucc[0]`/`metabc[0]`), retranslocating a fraction `forrtf[e]` of leaf nutrients into `forstg[e]`.
+- Monthly leaf drop (`leafdr[month]` for evergreen stands; hemisphere-aware once-per-autumn abscission fraction `wooddr[0]` for `decid == 1` deciduous and mixed stands, shifting seasonal months by 6 for `lat < 0`) transfers `rleavc` $\to$ surface litter (`strucc[0]`/`metabc[0]`), retranslocating a fraction `forrtf[e]` of leaf nutrients into `forstg[e]`.
 - Fine root death (`wooddr[1]`) transfers `frootc` $\to$ soil litter (`strucc[1]`/`metabc[1]`).
 - Fine branch death (`wooddr[2]`) $\to$ `wood1c`; large wood death (`wooddr[3]`) $\to$ `wood2c`; coarse root death (`wooddr[4]`) $\to$ `wood3c`.
 

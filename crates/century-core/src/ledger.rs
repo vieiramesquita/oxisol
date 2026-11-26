@@ -339,7 +339,7 @@ pub fn transfer_c_direct<F: Float>(
     dst: &mut CarbonPool<F>,
     amount: F,
 ) -> F {
-    if amount <= F::ZERO {
+    if amount <= F::ZERO || !amount.is_finite_val() {
         return F::ZERO;
     }
     let (actual, lf) = src.sub_preserving_ratio(amount);
@@ -353,7 +353,7 @@ pub fn transfer_c_direct<F: Float>(
 /// updating `cum_c_out` identically to `FlowLedger::commit`.
 #[inline(always)]
 pub fn export_c_direct<F: Float>(src: &mut CarbonPool<F>, cum_c_out: &mut F, amount: F) -> F {
-    if amount <= F::ZERO {
+    if amount <= F::ZERO || !amount.is_finite_val() {
         return F::ZERO;
     }
     let (actual, _lf) = src.sub_preserving_ratio(amount);
@@ -367,7 +367,7 @@ pub fn export_c_direct<F: Float>(src: &mut CarbonPool<F>, cum_c_out: &mut F, amo
 /// clamping to pool non-negativity identically to `FlowLedger::commit`.
 #[inline(always)]
 pub fn transfer_e_direct<F: Float>(src: &mut F, dst: &mut F, amount: F) -> F {
-    if amount <= F::ZERO {
+    if amount <= F::ZERO || !amount.is_finite_val() {
         return F::ZERO;
     }
     let avail = (*src).max(F::ZERO);
@@ -383,7 +383,7 @@ pub fn transfer_e_direct<F: Float>(src: &mut F, dst: &mut F, amount: F) -> F {
 /// leaching), updating `cum_e_out` identically to `FlowLedger::commit`.
 #[inline(always)]
 pub fn export_e_direct<F: Float>(src: &mut F, cum_e_out: &mut F, amount: F) -> F {
-    if amount <= F::ZERO {
+    if amount <= F::ZERO || !amount.is_finite_val() {
         return F::ZERO;
     }
     let avail = (*src).max(F::ZERO);

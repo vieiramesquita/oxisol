@@ -259,7 +259,7 @@ impl<'a, F: Float> Default for ResolvedMonthEvents<'a, F> {
 }
 
 impl<'a, F: Float> ResolvedMonthEvents<'a, F> {
-    fn apply_event(&mut self, kind: &'a EventKind, biome: &'a RawBiomeParams<F>) {
+    pub(crate) fn apply_event(&mut self, kind: &'a EventKind, biome: &'a RawBiomeParams<F>) {
         match kind {
             EventKind::Crop(name) => {
                 self.crop = Some((name.as_str(), biome.crops.get(name.as_str())));
@@ -341,10 +341,10 @@ impl<'a, F: Float> CompiledBlock<'a, F> {
     /// Return pre-resolved events for `(year, month)` in O(1) time.
     #[inline(always)]
     pub fn events_for(&self, year: i32, month: u8) -> ResolvedMonthEvents<'a, F> {
-        if !(1..=12).contains(&month) {
+        if year < self.start_year || year > self.end_year || !(1..=12).contains(&month) {
             return ResolvedMonthEvents::default();
         }
-        let rel_year_0 = ((year - self.start_year) % self.repeat_years) as usize;
+        let rel_year_0 = ((year - self.start_year) % self.repeat_years.max(1)) as usize;
         let slot = rel_year_0 * 12 + (month - 1) as usize;
         match &self.slots {
             BlockSlots::Dense(v) => v.get(slot).copied().unwrap_or_default(),

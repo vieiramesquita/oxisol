@@ -79,7 +79,7 @@ fn full_biome() -> RawBiomeParams<f64> {
         "PLOW".into(),
         CultParams {
             name: "PLOW".into(),
-            cultra: [0.2, 0.6, 0.2, 0.6, 0.7, 0.7, 0.4],
+            cultra: [0.0, 0.1, 0.9, 0.1, 0.9, 0.9, 1.0],
             clteff: [1.8, 1.8, 1.5, 1.8],
         },
     );
@@ -146,8 +146,8 @@ fn full_biome() -> RawBiomeParams<f64> {
         "GRAIN".into(),
         HarvParams {
             name: "GRAIN".into(),
-            aglrem: 0.95,
-            bglrem: 0.60,
+            aglrem: 0.0,
+            bglrem: 0.0,
             flghrv: 1,
             rmvstr: 0.30,
             remwsd: 0.20,
@@ -170,9 +170,13 @@ fn full_biome() -> RawBiomeParams<f64> {
         TremParams {
             name: "CLEARCUT".into(),
             evntyp: 0,
-            remf: [0.90, 0.80, 0.85, 0.20, 0.20],
+            remf: [0.90, 0.80, 0.85, 0.0, 0.0],
             fd: [0.75, 0.75],
-            retf: [[0.0; 4]; 3],
+            retf: [
+                [1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0, 0.0],
+            ],
         },
     );
     b.trems.insert(
@@ -182,7 +186,11 @@ fn full_biome() -> RawBiomeParams<f64> {
             evntyp: 1,
             remf: [0.95, 0.70, 0.40, 0.60, 0.50],
             fd: [0.50, 0.30],
-            retf: [[0.10; 4], [0.60; 4], [0.40; 4]],
+            retf: [
+                [0.0, 0.30, 1.0, 0.40],
+                [0.0, 0.30, 1.0, 0.40],
+                [0.0, 0.30, 1.0, 0.40],
+            ],
         },
     );
     b

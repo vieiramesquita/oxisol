@@ -20,11 +20,11 @@
   - **Exact Mass Conservation:** Stack-allocated `FlowLedger<F>` (with automatic overflow spill) and `< 1e-10 g/m²` C/N/P/S conservation auditing in `f64`.
   - **Explicit Profiles:** `CompatibilityProfile::ScientificClean` (`f64`, default) and `CompatibilityProfile::VemapV45Parity` (`f32`, historical VEMAP V4.5 audit mode).
 - **Single-Binary Embedded Web UI & REST API (`oxisol-web` / `oxisol serve`):**
-  - **Oxisol Studio** ships inside the compiled `oxisol` binary with **zero Node.js or CDN runtime dependencies** — run locally or on a headless AMD EPYC server over an SSH tunnel.
-  - Bilingual **EN / PT-BR** interface featuring the **Scenario Lab** (6 calibrated global presets incl. Southern Hemisphere Cerrado, A/B Baseline pinning with live `Δ` badges, interactive SVG charts, live pool flow diagram, CSV/JSON export) and **Spatial Grid & HPC Explorer** (live multi-core `rayon` execution, 2D interactive heatmap canvas, click-to-inspect cells, EPYC throughput projection).
+  - **Oxisol Studio** ships inside the compiled `oxisol` binary with **zero Node.js or CDN runtime dependencies** — run locally or on a headless server over an SSH tunnel.
+  - Bilingual **EN / PT-BR** interface featuring the **Scenario Lab** (6 calibrated global presets incl. Southern Hemisphere Cerrado, A/B Baseline pinning with live `Δ` badges, interactive SVG charts, live pool flow diagram, CSV/JSON export) and **Spatial Grid & HPC Explorer** (live multi-core `rayon` execution, 2D interactive heatmap canvas, click-to-inspect cells, throughput projection).
 - **100% Pure-Rust I/O (`oxisol-io`):**
   - Native parsers for `.100`, `.sch`, `.v2` ASCII rasters, `co2.dat`, pure-Rust NetCDF-3 Classic & 64-bit Offset reader/writer, `site.nc` I/O, and complete lossless JSON checkpoints.
-- **Built for AMD EPYC + 512 GB RAM Servers (`oxisol-grid`):**
+- **Built for POWERFUL Servers (`oxisol-grid`):**
   - 64-byte cache-line-aligned `CellState<f64>` (~5.8 KiB, L1d-resident), zero shared mutable state (`Arc<RawBiomeParams>`), lock-free `rayon` chunked parallelism, and portable SIMD (`wide::f32x8` / `f64x4`).
 
 ---
@@ -62,7 +62,7 @@ Full continental US VEMAP spinup (**3,168 cells × 1,000 years = 38.0 million ce
 | `oxisol` Transient (`1895–1993`, 99 yr) | `f64` | 16 | **1.19 s** | **264,148 cell-yr/s** (`3.17M cell-mo/s`) | — |
 | `oxisol-grid` SIMD `f32x8` SOM kernel | `f32` | 1 | — | **7.88M cell-yr/s** (`94.60M cell-mo/s`) | — |
 
-On production **AMD EPYC + 512 GB RAM** servers, compile with `RUSTFLAGS="-C target-cpu=native"` and pass `--threads <N> --chunk-size 32`.
+On production servers, compile with `RUSTFLAGS="-C target-cpu=native"` and pass `--threads <N> --chunk-size 32`.
 
 ---
 

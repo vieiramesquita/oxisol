@@ -5,7 +5,7 @@
 [![Safe Rust](https://img.shields.io/badge/unsafe-forbidden-brightgreen.svg)](crates/oxisol-core/src/lib.rs)
 [![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-06b6d4.svg)](https://vieiramesquita.github.io/oxisol/)
 
-**Oxisol** is an **open-source, clean-room, MIT-licensed *CENTURY-like* biogeochemical ecosystem engine** written from scratch in pure, safe Rust (`#![forbid(unsafe_code)]`) and engineered for 2020s multi-core CPUs, **AMD EPYC + 512 GB RAM** servers, and interactive web workflows.
+**Oxisol** is an **open-source, clean-room, MIT-licensed *CENTURY-like* biogeochemical ecosystem engine** written from scratch in pure, safe Rust (`#![forbid(unsafe_code)]`) and engineered for modern servers, and interactive web workflows.
 
 > **Why "Oxisol" — and why a CENTURY-like rewrite?**
 > *Oxisols* (Latossolos) are deeply weathered tropical soils rich in iron oxides — literally colored like **rust**. Meanwhile, the canonical 1990s CENTURY Fortran/C distribution remains proprietary (*All Rights Reserved* / non-open-source per the EU JRC MIDAS Policy Model Inventory). **Foundational climate and soil carbon science shouldn't stay locked inside proprietary 1990s Fortran.** Oxisol delivers an independent, clean-room, community-owned CENTURY-like model derived from published peer-reviewed biogeochemical literature — **2.1× faster than `gfortran -O2` on a single core, 14.2× faster on 8C/16T**, with zero C dependencies and a single-binary embedded Web Studio.

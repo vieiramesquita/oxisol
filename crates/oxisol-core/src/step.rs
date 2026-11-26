@@ -421,8 +421,10 @@ fn step_month_resolved<'a, F: Float>(
         }
     }
     if month == 1 {
-        state.fire_frtsh *= f(0.5);
+        state.fire_frtsh = F::ZERO;
+        state.fire_fnue = [F::ZERO; 2];
     }
+    state.aufert = F::ZERO;
 
     // 1. Apply O(1) pre-resolved schedule events for (year, month).
     if let Some((name, cp)) = ev.crop {

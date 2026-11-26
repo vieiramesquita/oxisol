@@ -68,13 +68,17 @@
 
 ## 3. Tier B Management & Disturbance Perturbations (Head-to-Head Black-Box Check)
 
-| Perturbation (10-yr isolated cell) | Legacy CENTURY ΔSOMSC | **Oxisol ΔSOMSC** | Directional Match |
-|---|---:|---:|---:|
-| `CULT P` (Moldboard plow, unharvested burial) | `+32.3 g C/m²` | **`+34.9 g C/m²`** | ✅ **MATCH** |
-| `FERT A + OMAD M` (Mineral N + organic manure) | `+299.4 g C/m²` | **`+790.7 g C/m²`** | ✅ **MATCH** |
-| `IRRI A50` (Auto-irrigation 75% AWHC) | `-29.4 g C/m²` | **`-20.0 g C/m²`** | ✅ **MATCH** |
-| `FIRE H` (High-intensity grass fire) | `-60.7 g C/m²` | **`-137.7 g C/m²`** | ✅ **MATCH** |
-| `DRAIN = 0.2` (Poorly drained anaerobic soil) | `+2.1 g C/m²` | **`+16.8 g C/m²`** | ✅ **MATCH** |
+Isolated 10-year perturbation deltas ($\Delta\text{SOMSC}$ relative to an unperturbed grassland baseline cell, `biome 17`, `VemapV45Parity`, `f32`) compared head-to-head against the compiled legacy binary:
+
+| Perturbation (10-yr isolated cell) | Legacy CENTURY ΔSOMSC | **Oxisol ΔSOMSC** | Δ Diff | Ratio | Assessment |
+|---|---:|---:|---:|---:|---|
+| `FIRE H` (High-intensity grass fire: `FLFREM`, `FDFREM`, `FRTSH`, `FNUE`) | `-60.7 g C/m²` | **`-60.3 g C/m²`** | `+0.4 g C/m²` | **`0.99×`** | ✅ **Quantitative Match** (−0.7%) |
+| `FERT A + OMAD M` (Demand-driven `AUFERT=1` + `100 g C/m²/yr` straw manure) | `+299.4 g C/m²` | **`+284.4 g C/m²`** | `-15.1 g C/m²` | **`0.95×`** | ✅ **Quantitative Match** (−5.0%) |
+| `DRAIN = 0.2` (Poorly drained soil, warm-soil `anerb` suppression) | `+2.1 g C/m²` | **`+1.5 g C/m²`** | `-0.6 g C/m²` | **`0.72×`** | ✅ **Close Match** (−0.6 g C/m²) |
+| `IRRI A50` (Auto-irrigation `fawhc=0.50`, June–July) | `-29.4 g C/m²` | **`-17.6 g C/m²`** | `+11.8 g C/m²` | `0.60×` | 🟡 **Sign Match** *(smaller irrigated root-zone decay response)* |
+| `CULT P` (Moldboard plow, unharvested burial, April) | `+32.3 g C/m²` | **`+13.0 g C/m²`** | `-19.3 g C/m²` | `0.40×` | 🟡 **Sign Match** *(lower buried-root stabilization vs. legacy)* |
+
+> **Transparency note:** Rather than labeling large magnitude differences as a generic "match", the table separates **quantitative agreement** (`FIRE H` at `0.99×`, `FERT A + OMAD M` at `0.95×`, `DRAIN = 0.2` within `0.6 g C/m²`) from **sign-consistent partial-magnitude differences** (`IRRI A50` at `0.60×` and `CULT P` at `0.40×`, which reflect remaining clean-room structural differences in monthly root-zone moisture weighting and post-tillage residue stabilization).
 
 Plus full automated `f64` verification (`cargo test --workspace`) of **exact `< 1e-10 g/m²` C, N, P, and S mass conservation** across all 9 disturbances, P/S inorganic geochemistry, C-14 isotope labeling, hyper-arid zero-precip deserts, continuous permafrost, and extreme soils.
 

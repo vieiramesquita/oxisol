@@ -119,13 +119,15 @@ pub fn step_crop<F: Float>(
             let bg_est = (fix.bgppa + fix.bgppb * ann_ppt).max(f(10.0));
             (bg_est / ag_est).clamp_val(f(0.3), f(3.5))
         };
-        let rs_ratio = (base_rs * co2.crop_rs + state.fire_frtsh).clamp_val(f(0.1), f(5.0));
+        let base_rs_co2 = (base_rs * co2.crop_rs).clamp_val(f(0.1), f(5.0));
+        let base_f_shoot = F::ONE / (F::ONE + base_rs_co2);
+        let rs_ratio = (base_rs_co2 + state.fire_frtsh).clamp_val(f(0.1), f(5.0));
         let f_root = rs_ratio / (F::ONE + rs_ratio);
         let f_shoot = F::ONE - f_root;
 
         let pot_ag = crop.prdx1 * t_fac * w_fac * dead_shade * tree_shade * bio_fac * co2.crop_prod;
-        let pot_total = if f_shoot > F::EPS_GUARD {
-            pot_ag / f_shoot
+        let pot_total = if base_f_shoot > F::EPS_GUARD {
+            pot_ag / base_f_shoot
         } else {
             pot_ag
         };
@@ -147,6 +149,7 @@ pub fn step_crop<F: Float>(
             let mut r_min_bg = [F::ONE; MAX_ELEM];
             let mut r_max_bg = [F::ONE; MAX_ELEM];
             let mut e_avail = [F::ZERO; MAX_ELEM];
+            let mut auto_fert_added = false;
 
             for e in 0..nelem {
                 let fav = element_favail(e, state.minerl[0][0], fix);
@@ -157,18 +160,25 @@ pub fn step_crop<F: Float>(
                 let soil_avail = soil_tot * fav * rti;
                 e_avail[e] = soil_avail + state.crpstg[e];
 
+                let fnue_ag = if e == 0 { state.fire_fnue[0] } else { F::ZERO };
+                let fnue_bg = if e == 0 { state.fire_fnue[1] } else { F::ZERO };
+
                 r_min_ag[e] = (crop.pramn[e][0] + bio_frac * (crop.pramn[e][1] - crop.pramn[e][0]))
                     * co2.crop_ce[0][e];
-                r_max_ag[e] = (crop.pramx[e][0] + bio_frac * (crop.pramx[e][1] - crop.pramx[e][0]))
-                    * co2.crop_ce[1][e];
+                r_max_ag[e] =
+                    (crop.pramx[e][0] + bio_frac * (crop.pramx[e][1] - crop.pramx[e][0]) + fnue_ag)
+                        * co2.crop_ce[1][e];
                 r_min_bg[e] =
                     (crop.prbmn[e][0] + ann_ppt * crop.prbmn[e][1]).max(f(5.0)) * co2.crop_ce[0][e];
-                r_max_bg[e] = (crop.prbmx[e][0] + ann_ppt * crop.prbmx[e][1]).max(r_min_bg[e])
+                r_max_bg[e] = (crop.prbmx[e][0] + ann_ppt * crop.prbmx[e][1] + fnue_bg)
+                    .max(r_min_bg[e])
                     * co2.crop_ce[1][e];
 
                 // Minimum nutrient required per unit total C (at widest allowed C:E).
                 let min_e_per_c =
                     f_shoot / r_max_ag[e].max(f(1.0)) + f_root / r_max_bg[e].max(f(1.0));
+                let max_e_per_c =
+                    f_shoot / r_min_ag[e].max(f(1.0)) + f_root / r_min_bg[e].max(f(1.0));
                 if min_e_per_c > F::EPS_GUARD {
                     // Symbiotic N fixation adds extra N supply for N-fixing crops (e == 0).
                     let sym_bonus = if e == 0 && crop.snfxmx > F::ZERO {
@@ -176,11 +186,37 @@ pub fn step_crop<F: Float>(
                     } else {
                         F::ZERO
                     };
+                    // Demand-driven automatic fertilization (`AUFERT`, Metherell et al. 1993):
+                    // 0 < aufert <= 1 supplies just enough nutrient to reach `aufert * pot_total`
+                    // at minimum tissue concentration; 1 < aufert <= 2 elevates toward maximum.
+                    if state.aufert > F::ZERO {
+                        let c_target = pot_total * state.aufert.clamp_val(F::ZERO, F::ONE);
+                        let e_per_c_target = if state.aufert <= F::ONE {
+                            min_e_per_c
+                        } else {
+                            let u = (state.aufert - F::ONE).clamp_val(F::ZERO, F::ONE);
+                            min_e_per_c + u * (max_e_per_c - min_e_per_c).max(F::ZERO)
+                        };
+                        let needed =
+                            (c_target * e_per_c_target - e_avail[e] - sym_bonus).max(F::ZERO);
+                        if needed > F::EPS_GUARD {
+                            ledger.schedule(
+                                PoolId::ExternalInputE(e),
+                                PoolId::Minerl(0, e),
+                                needed,
+                            );
+                            e_avail[e] += needed;
+                            auto_fert_added = true;
+                        }
+                    }
                     let max_c_e = (e_avail[e] + sym_bonus) / min_e_per_c;
                     if max_c_e < c_limit {
                         c_limit = max_c_e;
                     }
                 }
+            }
+            if auto_fert_added {
+                ledger.commit(state);
             }
 
             let actual_c = c_limit.clamp_val(F::ZERO, pot_total);

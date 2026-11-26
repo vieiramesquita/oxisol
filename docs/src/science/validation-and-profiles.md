@@ -35,7 +35,7 @@ Validated in black-box mode (`VemapV45Parity`, `f32`) against archived ORNL DAAC
 ## Tier B: Perturbation & Edge-Case Verification
 
 Because continental VEMAP uses `NELEM = 1`, `IVAUTO = 0`, and `DRAIN = 1.0`, Oxisol adds a dedicated **Tier B** integration test suite (`crates/oxisol-core/tests/oracle_tier_b.rs`) validating:
-- **5/5 directional agreement** head-to-head against a local black-box oracle on isolated perturbations (`CULT P`, `FERT+OMAD`, `IRRI A50`, `FIRE H`, `DRAIN = 0.2`).
+- **Head-to-head perturbation checks** on an isolated VEMAP cell (`biome 17`, 10 yr): quantitative agreement on `FIRE H` (`0.99×`), `FERT A + OMAD M` (`0.95×`), and `DRAIN = 0.2` (`−0.6 g C/m²`), and sign-consistent partial-magnitude differences on `IRRI A50` (`0.60×`) and `CULT P` (`0.40×`).
 - Full **P (`nelem = 2`)** and **S (`nelem = 3`)** geochemistry, `IVAUTO ∈ {1, 2, 3}`, continuous CO₂ ramp, C-14 isotope labeling, `EROD`, Southern Hemisphere deciduous abscission, zero-precip hyper-arid desert, continuous permafrost, 100% sand/clay, 90% rock, 1-layer soils, and >300-flow `FlowLedger` bursts — all maintaining `< 1e-10 g/m²` mass conservation in `f64`.
 
 ## Benchmark Provenance & Scientific References

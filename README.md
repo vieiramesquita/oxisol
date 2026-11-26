@@ -96,7 +96,7 @@ On production servers, compile with `RUSTFLAGS="-C target-cpu=native"` and pass 
   - **Active SOM (`som1c_soil`):** **`119.5` vs. `120.0 g C/m²`** (**$r = 0.9763$, $R^2 = 0.9531$**, **`-0.38%`** mean diff)
   - **Forest Wood (`rlwodc`):** **`3,806.0` vs. `3,656.9 g C/m²`** (**$r = 0.9786$, $R^2 = 0.9576$**)
   - **Surface Mineral N & Soil Water:** `minerl_n0` **`0.609` vs. `0.616 g N/m²`** (`-1.14%`), `asmos0` **`3.436` vs. `3.397 cm`** (**`1.52%`** median diff).
-- **Tier B Perturbations & Invariants:** **5/5** directional agreement vs. black-box oracle (`CULT P`, `FERT+OMAD`, `IRRI A50`, `FIRE H`, `DRAIN=0.2`), plus strict `< 1e-10 g/m²` C/N/P/S mass conservation across all 9 disturbances, P/S geochemistry, C-14 isotopes, and extreme climates/soils.
+- **Tier B Perturbations & Invariants:** Head-to-head isolated cell checks match quantitatively on **`FIRE H` (`0.99×`)**, **`FERT A + OMAD M` (`0.95×`)**, and **`DRAIN = 0.2` (`−0.6 g C/m²`)**, with sign-consistent partial-magnitude differences on `IRRI A50` (`0.60×`) and `CULT P` (`0.40×`), plus strict `< 1e-10 g/m²` C/N/P/S mass conservation across all 9 disturbances, P/S geochemistry, C-14 isotopes, and extreme climates/soils.
 - See [`BENCHMARKS.md`](BENCHMARKS.md) for the full 17-biome table and the list of legacy 1990s bugs eliminated in `ScientificClean`.
 
 ---

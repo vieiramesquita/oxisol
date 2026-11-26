@@ -61,10 +61,14 @@ pub fn decomp_rwcf_factor<F: Float>(top_rwcf: F) -> F {
 }
 
 /// Anaerobic decomposition reduction factor `anerb` under poor drainage (`drain < 1`).
+///
+/// Per Metherell et al. (1993, §3.5): anaerobic suppression only operates when
+/// soil/air temperature exceeds 2.0 °C (preventing false winter lockup when PET is near zero),
+/// and scales linearly between `aneref[0]` and `aneref[1]` toward `aneref[2]`, modulated by `drain`.
 #[inline]
-pub fn anaerobic_factor<F: Float>(rel_water: F, drain: F, fix: &FixParams<F>) -> F {
+pub fn anaerobic_factor<F: Float>(rel_water: F, drain: F, stemp: F, fix: &FixParams<F>) -> F {
     let f = F::from_f64;
-    if drain >= f(0.999) {
+    if drain >= f(0.999) || stemp <= f(2.0) {
         return F::ONE;
     }
     let r1 = fix.aneref[0];
@@ -94,7 +98,7 @@ pub fn update_abiotic_factors<F: Float>(
         decomp_moisture_factor(rel_water_surface)
     };
     let defac = (tf * wf).max(F::from_f64(1.0e-4));
-    let anerb = anaerobic_factor(rel_water_surface, derived.drain, fix);
+    let anerb = anaerobic_factor(rel_water_surface, derived.drain, state.stemp, fix);
     state.defac = defac;
     state.anerb = anerb;
     (defac, anerb)

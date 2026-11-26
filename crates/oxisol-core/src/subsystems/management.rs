@@ -75,6 +75,12 @@ pub fn apply_irrigation<F: Float>(
 }
 
 /// Apply fixed or automatic fertilization (`FERT`).
+///
+/// Per Metherell et al. (1993, Appendix 2.5):
+/// - Fixed `feramt[e]` adds mineral nutrients directly to `minerl[0][e]`.
+/// - Automatic `aufert > 0` activates demand-driven top-up during plant growth (`step_crop`),
+///   supplying only the exact nutrient deficit required to sustain `aufert` of potential growth
+///   rather than dumping excess mineral N into the soil.
 pub fn apply_fertilizer<F: Float>(
     state: &mut CellState<F>,
     fert: &FertParams<F>,
@@ -82,14 +88,11 @@ pub fn apply_fertilizer<F: Float>(
     ledger: &mut FlowLedger<F>,
 ) {
     let nelem = elements.nelem();
+    if fert.aufert > F::ZERO {
+        state.aufert = fert.aufert.clamp_val(F::ZERO, F::from_f64(2.0));
+    }
     for e in 0..nelem {
-        let amt = if fert.aufert > F::ZERO {
-            // Auto-fertilization tops up layer 0 mineral pool to target level.
-            let target = fert.aufert * F::from_f64(10.0);
-            (target - state.minerl[0][e]).max(F::ZERO)
-        } else {
-            fert.feramt[e].max(F::ZERO)
-        };
+        let amt = fert.feramt[e].max(F::ZERO);
         if amt > F::ZERO {
             ledger.schedule(PoolId::ExternalInputE(e), PoolId::Minerl(0, e), amt);
         }
@@ -641,6 +644,7 @@ pub fn apply_fire<F: Float>(
     }
 
     state.fire_frtsh = fire.frtsh.max(F::ZERO);
+    state.fire_fnue = [fire.fnue[0].max(F::ZERO), fire.fnue[1].max(F::ZERO)];
     ledger.commit(state);
 }
 

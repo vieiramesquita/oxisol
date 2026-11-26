@@ -207,8 +207,14 @@ pub struct CellState<F: Float> {
     pub cult_months: u8,
     /// Active cultivation decomposition multipliers `[som1, som2, som3, structural]` (Manual A2-32).
     pub clteff: [F; 4],
-    /// Post-fire temporary root:shoot boost (decays annually).
+    /// Post-fire temporary root:shoot boost (cleared at season end).
     pub fire_frtsh: F,
+    /// Post-fire temporary shoot/root max C:N shift `[shoot_fnue, root_fnue]` (Manual A2-11).
+    #[serde(default)]
+    pub fire_fnue: [F; 2],
+    /// Active automatic fertilization target (`0 < aufert <= 2`, Manual A2-10).
+    #[serde(default)]
+    pub aufert: F,
     /// Current monthly soil temperature (°C).
     pub stemp: F,
     /// Current monthly abiotic decomposition factor `defac`.
@@ -325,6 +331,8 @@ impl<F: Float> Default for CellState<F> {
             cult_months: 0,
             clteff: [F::ONE; 4],
             fire_frtsh: F::ZERO,
+            fire_fnue: [F::ZERO; 2],
+            aufert: F::ZERO,
             stemp: F::from_f64(10.0),
             defac: F::from_f64(0.5),
             anerb: F::ONE,

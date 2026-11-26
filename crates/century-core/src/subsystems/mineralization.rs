@@ -100,6 +100,17 @@ pub fn target_ce_ratio<F: Float>(varat: [F; 3], minerl0: F) -> F {
     (rmax - frac * (rmax - rmin)).max(F::from_f64(1.0))
 }
 
+/// Compute target C:E ratio for surface microbes (`som1c[0]`) using `fix.pcemic`
+/// as a function of decomposing residue's E:C ratio (Manual §3.4 p. 3-8, A2-11).
+#[inline]
+pub fn surface_microbe_ce_ratio<F: Float>(pcemic: [F; 3], donor_e_to_c: F) -> F {
+    let rmax = pcemic[0];
+    let rmin = pcemic[1];
+    let thresh = pcemic[2].max(F::EPS_GUARD);
+    let frac = (donor_e_to_c / thresh).clamp_val(F::ZERO, F::ONE);
+    (rmax - frac * (rmax - rmin)).max(F::from_f64(1.0))
+}
+
 /// Check whether decomposition of `c_flow` from donor pool `(donor_c, donor_e)` into
 /// receiver pool with net carbon `c_net` and target C:E ratios `target_ce` can proceed
 /// given available top-layer mineral nutrients `minerl0`.
@@ -233,11 +244,12 @@ pub fn apply_atmospheric_inputs<F: Float>(
     }
 
     // Non-symbiotic soil N fixation (g N / m2 / yr -> monthly via precip fraction).
-    // In CENTURY V4 site.100, EPNFS(1) > 1.0 is a precipitation scale/threshold (e.g. 30 cm),
-    // whereas EPNFS(1) < 1.0 is a small annual intercept (g N/m2/yr).
+    // When EPNFS(1) >= 1.0 (e.g. 30.0 cm in VEMAP lu*.100), EPNFS(1) is the annual AET
+    // threshold above which fixation scales linearly as EPNFS(2) * max(0, ann_aet - EPNFS(1)).
+    // When EPNFS(1) < 1.0, uses linear precipitation regression EPNFS(1) + EPNFS(2) * ann_ppt.
     let ann_n_fix = if site.epnfs[0] >= F::ONE {
-        let raw = site.epnfs[1] * ann_ppt;
-        raw.clamp_val(F::ZERO, F::ONE)
+        let excess_aet = (state.ann_aet - site.epnfs[0]).max(F::ZERO);
+        (site.epnfs[1] * excess_aet).clamp_val(F::ZERO, F::ONE)
     } else {
         (site.epnfs[0] + site.epnfs[1] * ann_ppt).clamp_val(F::ZERO, f(2.0))
     };
@@ -256,18 +268,11 @@ pub fn apply_atmospheric_inputs<F: Float>(
         }
     }
 
-    // Excess mineral N gaseous loss (`volex`, Manual Ch. 3 §3.4) from top layer
-    // when mineral N accumulates above microbial/plant uptake capacity.
-    let vlosse_rate = if fix.vlosse > F::ZERO {
-        fix.vlosse
-    } else {
-        f(0.015)
-    };
+    // Excess mineral N gaseous loss (`volex`, Manual §3.4 p. 3-8):
+    // Monthly loss of `vlosse / 12` from top-layer mineral N.
     let n0 = state.minerl[0][0];
-    if n0 > f(1.5) {
-        let excess = n0 - f(1.5);
-        let volex = (excess * vlosse_rate.clamp_val(F::ZERO, f(0.25)) * state.defac.max(f(0.05)))
-            .min(excess);
+    if n0 > F::ZERO && fix.vlosse > F::ZERO {
+        let volex = (n0 * (fix.vlosse.clamp_val(F::ZERO, f(0.5)) / f(12.0))).min(n0);
         if volex > F::ZERO {
             ledger.schedule(PoolId::Minerl(0, 0), PoolId::AtmosphereE(0), volex);
             state.month_n_volat += volex;

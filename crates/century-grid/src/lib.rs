@@ -17,7 +17,10 @@
 pub mod runner;
 pub mod simd_batch;
 
-pub use runner::{run_grid_parallel, run_grid_serial, CellRunResult, GridRunConfig, GridRunStats};
+pub use runner::{
+    run_grid_parallel, run_grid_parallel_with_restart, run_grid_serial, CellRunResult,
+    GridRunConfig, GridRunStats,
+};
 pub use simd_batch::{
     batch_defac_f32x8, batch_defac_f64x4, batch_rawls_retention_f32x8, batch_som_decay_f32x8,
     group_cells_by_biome, BiomeBatchGroup, SomSoaBatchF32,

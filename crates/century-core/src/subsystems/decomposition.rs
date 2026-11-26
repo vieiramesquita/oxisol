@@ -8,7 +8,9 @@ use crate::float::Float;
 use crate::ledger::{FlowLedger, PoolId};
 use crate::params::{CellDerivedParams, FixParams, TreeParams, MAX_ELEM};
 use crate::state::CellState;
-use crate::subsystems::mineralization::{candec_scale, route_decomp_nutrients, target_ce_ratio};
+use crate::subsystems::mineralization::{
+    candec_scale, route_decomp_nutrients, surface_microbe_ce_ratio, target_ce_ratio,
+};
 
 /// Generalized Poisson Density Function (`gpdf`) used for temperature responses.
 #[inline]
@@ -25,32 +27,32 @@ pub fn gpdf<F: Float>(x: F, x_opt: F, x_max: F, a: F, b: F) -> F {
     (frac.powf(a) * exponent.exp()).clamp_val(F::ZERO, F::ONE)
 }
 
-/// Decomposition temperature modifier (`tcalc`, Parton et al. 1993, 1994).
+/// Decomposition temperature modifier (`tcalc`, Parton et al. 1994 arctangent curve).
 ///
-/// - `idef == 1`: exponential curve `teff[0] + teff[1] * exp(teff[2] * T)`
-/// - `idef == 2` (CENTURY V4/V4.5 default): published Parton et al. (1994) arctangent curve
-///   `0.56 + (1.46 / pi) * atan(pi * 0.0309 * (T - 15.7))` normalized at 30 °C.
+/// Published form: `0.56 + (1.46 / pi) * atan(pi * 0.0309 * (T - 15.7))`,
+/// which equals `0.100` at 0 °C and `1.000` at 30 °C.
 #[inline]
-pub fn decomp_temp_factor<F: Float>(stemp: F, fix: &FixParams<F>) -> F {
+pub fn decomp_temp_factor<F: Float>(stemp: F, _fix: &FixParams<F>) -> F {
     let f = F::from_f64;
-    if fix.idef == 1 {
-        let val = fix.teff[0] + fix.teff[1] * (fix.teff[2] * stemp).exp();
-        val.clamp_val(f(0.01), f(1.5))
-    } else {
-        // Published Parton et al. (1994) arctangent soil temperature response.
-        let raw_t = f(0.56) + (f(1.46) / F::PI) * (F::PI * f(0.0309) * (stemp - f(15.7))).atan();
-        let norm_30 =
-            f(0.56) + (f(1.46) / F::PI) * (F::PI * f(0.0309) * (f(30.0) - f(15.7))).atan();
-        (raw_t / norm_30).clamp_val(f(0.01), f(1.5))
-    }
+    let raw_t = f(0.56) + (f(1.46) / F::PI) * (F::PI * f(0.0309) * (stemp - f(15.7))).atan();
+    raw_t.clamp_val(f(0.01), f(1.5))
 }
 
-/// Logistic moisture modifier for decomposition `wfunc(r)`.
+/// Logistic moisture modifier for decomposition `wfunc(r)` (`idef = 2`, ratio option).
 #[inline]
 pub fn decomp_moisture_factor<F: Float>(rel_water: F) -> F {
     let f = F::from_f64;
     let r = rel_water.clamp_val(F::ZERO, f(5.0));
     (F::ONE / (F::ONE + f(30.0) * (-f(8.5) * r).exp())).clamp_val(f(0.01), F::ONE)
+}
+
+/// Relative soil water content moisture modifier (`idef = 1`, Manual A2-10).
+#[inline]
+pub fn decomp_rwcf_factor<F: Float>(top_rwcf: F) -> F {
+    let f = F::from_f64;
+    let w = top_rwcf.clamp_val(F::ZERO, F::ONE);
+    // Smooth saturating response from 0.05 at wilting point to 1.0 near field capacity.
+    (f(0.05) + f(0.95) * w.powf(f(0.65))).clamp_val(f(0.01), F::ONE)
 }
 
 /// Anaerobic decomposition reduction factor `anerb` under poor drainage (`drain < 1`).
@@ -71,16 +73,21 @@ pub fn anaerobic_factor<F: Float>(rel_water: F, drain: F, fix: &FixParams<F>) ->
     (F::ONE - excess * imp * (F::ONE - min_anerb)).clamp_val(min_anerb, F::ONE)
 }
 
-/// Compute abiotic `defac` and `anerb` and store on `state`.
+/// Compute abiotic `defac` and `anerb` and store on `state` (honoring `fix.idef` moisture mode).
 #[inline]
 pub fn update_abiotic_factors<F: Float>(
     state: &mut CellState<F>,
     derived: &CellDerivedParams<F>,
     fix: &FixParams<F>,
     rel_water_surface: F,
+    top_rwcf: F,
 ) -> (F, F) {
     let tf = decomp_temp_factor(state.stemp, fix);
-    let wf = decomp_moisture_factor(rel_water_surface);
+    let wf = if fix.idef == 1 {
+        decomp_rwcf_factor(top_rwcf)
+    } else {
+        decomp_moisture_factor(rel_water_surface)
+    };
     let defac = (tf * wf).max(F::from_f64(1.0e-4));
     let anerb = anaerobic_factor(rel_water_surface, derived.drain, fix);
     state.defac = defac;
@@ -107,6 +114,28 @@ pub fn step_decomposition<F: Float>(
     let defac = state.defac;
     let anerb = state.anerb;
     let clt = state.clteff;
+    let decw = tree.map(|t| t.decw).unwrap_or([f(1.5), f(0.5), f(0.6)]);
+
+    // Precompute lignin inhibition exponentials once per month (strlig and wdlig are
+    // invariant across the `ntspm` decomposition sub-steps).
+    let str_lig = [
+        state.strlig[0].clamp_val(F::ZERO, F::ONE),
+        state.strlig[1].clamp_val(F::ZERO, F::ONE),
+    ];
+    let str_lig_exp = [
+        (-fix.pligst[0] * str_lig[0]).exp(),
+        (-fix.pligst[1] * str_lig[1]).exp(),
+    ];
+    let wd_lig = [
+        state.wdlig[0].clamp_val(F::ZERO, F::ONE),
+        state.wdlig[1].clamp_val(F::ZERO, F::ONE),
+        state.wdlig[2].clamp_val(F::ZERO, F::ONE),
+    ];
+    let wd_lig_exp = [
+        (-fix.pligst[0] * wd_lig[0]).exp(),
+        (-fix.pligst[0] * wd_lig[1]).exp(),
+        (-fix.pligst[1] * wd_lig[2]).exp(),
+    ];
 
     for _ in 0..nsub {
         // Compute target C:E ratios for SOM1, SOM2, SOM3 from current top-layer mineral pools.
@@ -126,15 +155,12 @@ pub fn step_decomposition<F: Float>(
             if sc > F::EPS_GUARD {
                 let eff_c = sc.min(fix.strmax[layer]);
                 let an_mult = if layer == 1 { anerb } else { F::ONE };
-                // Manual p. 174: clteff[3] is structural decomposition multiplier.
-                let k = fix.dec1[layer]
-                    * defac
-                    * (-fix.pligst[layer] * state.strlig[layer]).exp()
-                    * an_mult
-                    * clt[3];
+                let clt_mult = if layer == 1 { clt[3] } else { F::ONE };
+                // Manual A2-32: clteff[3] is soil structural decomposition multiplier.
+                let k = fix.dec1[layer] * defac * str_lig_exp[layer] * an_mult * clt_mult;
                 let raw_c = (eff_c * k * dt).min(sc * f(0.95));
 
-                let lig = state.strlig[layer].clamp_val(F::ZERO, F::ONE);
+                let lig = str_lig[layer];
                 let c_lig = raw_c * lig;
                 let c_nonlig = raw_c - c_lig;
 
@@ -178,15 +204,26 @@ pub fn step_decomposition<F: Float>(
                 }
 
                 // Non-lignin -> SOM1[layer] (respired fraction ps1co2[layer]).
+                // Surface layer (0) uses `pcemic` based on donor E:C; soil layer (1) uses `varat1`.
                 if c_nonlig > F::EPS_GUARD {
                     let resp_f = fix.ps1co2[layer];
                     let c_net = c_nonlig * (F::ONE - resp_f);
+                    let r_recv = if layer == 0 {
+                        let mut r_surf = [F::ONE; MAX_ELEM];
+                        for e in 0..elements.nelem() {
+                            r_surf[e] =
+                                surface_microbe_ce_ratio(fix.pcemic[e], state.struce[0][e] / sc);
+                        }
+                        r_surf
+                    } else {
+                        r_som1
+                    };
                     let scale = candec_scale(
                         sc,
                         state.struce[layer],
                         c_nonlig,
                         c_net,
-                        r_som1,
+                        r_recv,
                         state.minerl[0],
                         elements,
                     );
@@ -214,7 +251,7 @@ pub fn step_decomposition<F: Float>(
                             ],
                             cf,
                             net,
-                            r_som1,
+                            r_recv,
                             elements,
                             ledger,
                         );
@@ -233,12 +270,22 @@ pub fn step_decomposition<F: Float>(
                 let raw_c = (mc * k * dt).min(mc * f(0.95));
                 let resp_f = fix.pmco2[layer];
                 let c_net = raw_c * (F::ONE - resp_f);
+                let r_recv = if layer == 0 {
+                    let mut r_surf = [F::ONE; MAX_ELEM];
+                    for e in 0..elements.nelem() {
+                        r_surf[e] =
+                            surface_microbe_ce_ratio(fix.pcemic[e], state.metabe[0][e] / mc);
+                    }
+                    r_surf
+                } else {
+                    r_som1
+                };
                 let scale = candec_scale(
                     mc,
                     state.metabe[layer],
                     raw_c,
                     c_net,
-                    r_som1,
+                    r_recv,
                     state.minerl[0],
                     elements,
                 );
@@ -266,7 +313,7 @@ pub fn step_decomposition<F: Float>(
                         ],
                         cf,
                         net,
-                        r_som1,
+                        r_recv,
                         elements,
                         ledger,
                     );
@@ -276,14 +323,12 @@ pub fn step_decomposition<F: Float>(
         ledger.commit(state);
 
         // --- 3. Dead Wood Decomposition (wood1, wood2, wood3) ---
-        let decw = tree.map(|t| t.decw).unwrap_or([f(1.5), f(0.5), f(0.6)]);
-        let wood_specs: [(PoolId, [PoolId; 3], usize, F, F, F); 3] = [
+        let wood_specs: [(PoolId, [PoolId; 3], usize, F, F); 3] = [
             (
                 PoolId::Wood1C,
                 [PoolId::Wood1E(0), PoolId::Wood1E(1), PoolId::Wood1E(2)],
                 0,
                 decw[0],
-                fix.pligst[0],
                 F::ONE,
             ),
             (
@@ -291,7 +336,6 @@ pub fn step_decomposition<F: Float>(
                 [PoolId::Wood2E(0), PoolId::Wood2E(1), PoolId::Wood2E(2)],
                 0,
                 decw[1],
-                fix.pligst[0],
                 F::ONE,
             ),
             (
@@ -299,12 +343,10 @@ pub fn step_decomposition<F: Float>(
                 [PoolId::Wood3E(0), PoolId::Wood3E(1), PoolId::Wood3E(2)],
                 1,
                 decw[2],
-                fix.pligst[1],
                 anerb,
             ),
         ];
-        for (idx, (w_c_id, w_e_ids, som_lyr, dec_rate, plig, an_m)) in
-            wood_specs.into_iter().enumerate()
+        for (idx, (w_c_id, w_e_ids, som_lyr, dec_rate, an_m)) in wood_specs.into_iter().enumerate()
         {
             let (wc, we) = match idx {
                 0 => (state.wood1c.total(), state.wood1e),
@@ -312,8 +354,8 @@ pub fn step_decomposition<F: Float>(
                 _ => (state.wood3c.total(), state.wood3e),
             };
             if wc > F::EPS_GUARD {
-                let lig = state.wdlig[idx].clamp_val(F::ZERO, F::ONE);
-                let k = dec_rate * defac * (-plig * lig).exp() * an_m;
+                let lig = wd_lig[idx];
+                let k = dec_rate * defac * wd_lig_exp[idx] * an_m;
                 let raw_c = (wc * k * dt).min(wc * f(0.95));
                 let c_lig = raw_c * lig;
                 let c_nonlig = raw_c - c_lig;
@@ -382,7 +424,7 @@ pub fn step_decomposition<F: Float>(
         // --- 4. Surface Active Microbes (som1c[0]) -> SOM2 ---
         let s10 = state.som1c[0].total();
         if s10 > F::EPS_GUARD {
-            let k = fix.dec3[0] * defac * clt[0];
+            let k = fix.dec3[0] * defac;
             let raw_c = (s10 * k * dt).min(s10 * f(0.95));
             let resp_f = fix.p1co2a[0].clamp_val(f(0.05), f(0.95));
             let c_net = raw_c * (F::ONE - resp_f);
@@ -429,8 +471,9 @@ pub fn step_decomposition<F: Float>(
             let k = fix.dec3[1] * defac * derived.eftext * anerb * clt[0];
             let raw_c = (s11 * k * dt).min(s11 * f(0.95));
             let resp_f = derived.p1co2_soil;
-            let om_leach_f = if leach_flux > fix.omlech[2] {
-                (((leach_flux - fix.omlech[2]) / f(18.0)).clamp_val(F::ZERO, F::ONE)
+            // Organic matter leaching scales linearly with 30 cm water flux up to omlech[2] (60 cm).
+            let om_leach_f = if leach_flux > F::ZERO {
+                ((leach_flux / fix.omlech[2].max(f(0.1))).clamp_val(F::ZERO, F::ONE)
                     * derived.omlech_frac)
                     .min(F::ONE - resp_f)
             } else {

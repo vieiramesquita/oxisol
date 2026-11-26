@@ -17,29 +17,52 @@ use crate::state::CellState;
 use crate::subsystems::mineralization::partition_residue;
 
 /// Compute monthly irrigation water (cm) and add irrigation S (when `FullCnps`).
+///
+/// Honors all four CENTURY V4 `AUIRRI` modes (Manual Appendix 2.8 p. A2-18):
+/// - `0`: fixed addition `irramt`
+/// - `1`: automatic irrigation to field capacity (`twhc_root`) when projected root-zone
+///   water `(avh2o[0] + precip - pet)` drops below `fawhc * twhc_root`
+/// - `2`: automatic fixed addition `irraut` when projected root-zone water < `fawhc * twhc_root`
+/// - `3`: automatic irrigation to field capacity plus PET (`twhc_root + pet - avh2o[0] - precip`)
+#[allow(clippy::too_many_arguments)]
 pub fn apply_irrigation<F: Float>(
     state: &mut CellState<F>,
     derived: &CellDerivedParams<F>,
     site: &SiteParams<F>,
     irri: &IrriParams<F>,
+    precip_cm: F,
+    pet_cm: F,
     elements: ElementMode,
     ledger: &mut FlowLedger<F>,
 ) -> F {
     let f = F::from_f64;
+    let trigger = derived.twhc_root * irri.fawhc.clamp_val(F::ZERO, F::ONE);
+    let projected = state.avh2o[0] + precip_cm.max(F::ZERO) - pet_cm.max(F::ZERO);
     let cm = match irri.auirri {
         0 => irri.irramt.max(F::ZERO),
         1 => {
-            let target = derived.twhc_root * irri.fawhc.clamp_val(F::ZERO, F::ONE);
-            (target - state.avh2o[0]).max(F::ZERO)
+            if projected < trigger {
+                (derived.twhc_root - projected.max(F::ZERO)).max(F::ZERO)
+            } else {
+                F::ZERO
+            }
         }
-        _ => {
-            let trigger = derived.twhc_root * irri.fawhc.clamp_val(F::ZERO, F::ONE);
-            if state.avh2o[0] < trigger {
+        2 => {
+            if projected < trigger {
                 irri.irraut.max(F::ZERO)
             } else {
                 F::ZERO
             }
         }
+        3 => {
+            if projected < trigger {
+                (derived.twhc_root + pet_cm.max(F::ZERO) - state.avh2o[0] - precip_cm.max(F::ZERO))
+                    .max(F::ZERO)
+            } else {
+                F::ZERO
+            }
+        }
+        _ => F::ZERO,
     };
 
     // Irrigation sulfur input: 1 cm water = 10 L/m2; sirri mg/L * 10 L/m2 / 1000 = 0.01 * cm * sirri g S/m2.

@@ -340,9 +340,9 @@ pub fn parse_crop_file<F: Float, P: AsRef<Path>>(
         c.rtdtmp = get_f(m, "RTDTMP", c.rtdtmp);
         c.snfxmx = get_f(m, "SNFXMX(1)", c.snfxmx);
         c.del13c = get_f(m, "DEL13C", c.del13c);
-        c.co2ipr = get_f(m, "CO2IPR", c.co2ipr);
-        c.co2itr = get_f(m, "CO2ITR", c.co2itr);
-        c.co2irs = get_f(m, "CO2IRS", c.co2irs);
+        c.co2ipr = get_f(m, "CO2IPR(1)", get_f(m, "CO2IPR", c.co2ipr));
+        c.co2itr = get_f(m, "CO2ITR(1)", get_f(m, "CO2ITR", c.co2itr));
+        c.co2irs = get_f(m, "CO2IRS(1)", get_f(m, "CO2IRS", c.co2irs));
         map.insert(blk.name, c);
     }
     Ok(map)
@@ -397,17 +397,18 @@ pub fn parse_tree_file<F: Float, P: AsRef<Path>>(
         for e in 0..3 {
             t.forrtf[e] = get_f(m, &format!("FORRTF({})", e + 1), t.forrtf[e]);
             for j in 0..2 {
-                t.co2ice[j][e] =
-                    get_f(m, &format!("CO2ICE(1,{},{})", j + 1, e + 1), t.co2ice[j][e]);
+                let k2 = format!("CO2ICE(2,{},{})", j + 1, e + 1);
+                let k1 = format!("CO2ICE(1,{},{})", j + 1, e + 1);
+                t.co2ice[j][e] = get_f(m, &k2, get_f(m, &k1, t.co2ice[j][e]));
             }
         }
         t.sapk = get_f(m, "SAPK", t.sapk);
         t.swold = get_f(m, "SWOLD", t.swold);
         t.snfxmx = get_f(m, "SNFXMX(2)", t.snfxmx);
         t.del13c = get_f(m, "DEL13C", t.del13c);
-        t.co2ipr = get_f(m, "CO2IPR", t.co2ipr);
-        t.co2itr = get_f(m, "CO2ITR", t.co2itr);
-        t.co2irs = get_f(m, "CO2IRS", t.co2irs);
+        t.co2ipr = get_f(m, "CO2IPR(2)", get_f(m, "CO2IPR", t.co2ipr));
+        t.co2itr = get_f(m, "CO2ITR(2)", get_f(m, "CO2ITR", t.co2itr));
+        t.co2irs = get_f(m, "CO2IRS(2)", get_f(m, "CO2IRS", t.co2irs));
         t.basfc2 = get_f(m, "BASFC2", t.basfc2);
         t.basfct = get_f(m, "BASFCT", t.basfct);
         t.sitpot = get_f(m, "SITPOT", t.sitpot);

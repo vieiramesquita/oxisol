@@ -66,7 +66,7 @@ pub struct FixParams<F: Float> {
     pub enrich: F,
     /// Available nutrient fraction for plant uptake `[N, P_min, S, P_max, P_s1, P_s2]`.
     pub favail: [F; 6],
-    /// Leaching texture parameters `[N_int, N_sand, P, S_int, S_sand]`.
+    /// Leaching texture & element parameters `[intercept, sand_slope, N_mult, P_mult, S_mult]`.
     pub fleach: [F; 5],
     /// Water loss multipliers `[interception, bare_evap, transp, pet]`.
     pub fwloss: [F; 4],
@@ -80,7 +80,7 @@ pub struct FixParams<F: Float> {
     pub fxnpb: F,
     /// Grazing effect parameter.
     pub gremb: F,
-    /// Decomposition temperature function selector (`1` = arctan, `2` = gpdf).
+    /// Decomposition moisture function selector (`1` = relative water content, `2` = precip/PET ratio).
     pub idef: i32,
     /// Lower horizon fraction replenished on erosion `[som1, som2, som3]`.
     pub lhzf: [F; 3],
@@ -219,9 +219,9 @@ impl<F: Float> Default for FixParams<F> {
             edepth: f(0.2),
             elitst: f(0.4),
             enrich: f(2.0),
-            favail: [f(0.9), f(0.1), f(0.5), f(0.4), f(0.5), f(2.0)],
-            fleach: [f(0.2), f(0.8), f(0.01), f(0.2), f(0.8)],
-            fwloss: [f(1.0), f(1.0), f(1.0), f(1.0)],
+            favail: [f(0.9), f(0.1), f(0.5), f(0.2), f(0.4), f(2.0)],
+            fleach: [f(0.2), f(0.7), f(1.0), f(0.0), f(0.1)],
+            fwloss: [f(0.8), f(0.8), f(0.65), f(0.70)],
             fxmca: f(0.0),
             fxmcb: f(0.0),
             fxmxs: f(1.0),
@@ -229,10 +229,10 @@ impl<F: Float> Default for FixParams<F> {
             gremb: f(0.0),
             idef: 2,
             lhzf: [f(0.01), f(0.49), f(0.50)],
-            minlch: f(2.0),
+            minlch: f(18.0),
             nsnfix: 0,
             ntspm: 4,
-            omlech: [f(0.03), f(0.12), f(1.9)],
+            omlech: [f(0.03), f(0.12), f(60.0)],
             p1co2a: [f(0.6), f(0.17)],
             p1co2b: [f(0.0), f(0.68)],
             p2co2: f(0.55),
@@ -249,9 +249,9 @@ impl<F: Float> Default for FixParams<F> {
             pligst: [f(3.0), f(3.0)],
             pmco2: [f(0.55), f(0.55)],
             pmnsec: [f(0.0), f(0.06), f(0.02)],
-            pmntmp: f(0.0),
+            pmntmp: f(0.004),
             pmxbio: f(600.0),
-            pmxtmp: f(0.0),
+            pmxtmp: f(-0.0035),
             pparmn: [f(0.0), f(0.0005), f(0.001)],
             pprpts: [f(0.0), f(1.0), f(0.8)],
             ps1co2: [f(0.45), f(0.55)],
@@ -289,8 +289,8 @@ impl<F: Float> Default for FixParams<F> {
                 [f(200.0), f(50.0), f(2.0)],
                 [f(200.0), f(50.0), f(2.0)],
             ],
-            vlosse: f(0.0),
-            vlossg: f(0.05),
+            vlosse: f(0.02),
+            vlossg: f(0.02),
         }
     }
 }
@@ -783,7 +783,7 @@ pub struct CultParams<F: Float> {
     /// 3: stdedc->soil litter, 4: surface structural->soil structural,
     /// 5: surface metabolic->soil metabolic, 6: bglivc->soil litter.
     pub cultra: [F; 7],
-    /// Decomposition multipliers `[struct, metab, active, slow]`.
+    /// Decomposition multipliers `[som1, som2, som3, structural]` (Manual A2-4/A2-32).
     pub clteff: [F; 4],
 }
 
@@ -1218,9 +1218,12 @@ impl<F: Float> CellDerivedParams<F> {
         let fps1s3 = (fix.ps1s3[0] + fix.ps1s3[1] * cell.clay).clamp_val(F::ZERO, f(0.5));
         let fps2s3 = (fix.ps2s3[0] + fix.ps2s3[1] * cell.clay).clamp_val(F::ZERO, f(0.5));
 
-        let fleach_n = (fix.fleach[0] + fix.fleach[1] * cell.sand).clamp_val(F::ZERO, F::ONE);
-        let fleach_p = fix.fleach[2].clamp_val(F::ZERO, F::ONE);
-        let fleach_s = (fix.fleach[3] + fix.fleach[4] * cell.sand).clamp_val(F::ZERO, F::ONE);
+        // Mineral leaching fractions (Manual §3.3 p. 3-6, A2-9):
+        // fleach_base = fleach[0] + fleach[1] * sand; element multipliers are fleach[2]=N, [3]=P, [4]=S.
+        let fleach_base = (fix.fleach[0] + fix.fleach[1] * cell.sand).clamp_val(F::ZERO, F::ONE);
+        let fleach_n = (fleach_base * fix.fleach[2]).clamp_val(F::ZERO, F::ONE);
+        let fleach_p = (fleach_base * fix.fleach[3]).clamp_val(F::ZERO, F::ONE);
+        let fleach_s = (fleach_base * fix.fleach[4]).clamp_val(F::ZERO, F::ONE);
         let omlech_frac = (fix.omlech[0] + fix.omlech[1] * cell.sand).clamp_val(F::ZERO, f(0.5));
 
         // Per-cell P geochemistry texture/pH factors (without mutating FixParams!).
@@ -1229,7 +1232,7 @@ impl<F: Float> CellDerivedParams<F> {
         let pparmn_2 = (fix.pparmn[1] * ph_factor).max(F::ZERO);
         let psecmn_2 = (fix.psecmn[1] * ph_factor).max(F::ZERO);
 
-        // Annual mean temperature range for Linacre PET.
+        // Annual mean temperature range for Linacre (1977) PET (coldest month floored at -10 °C).
         let mut tmin_yr = annual_mean_temps[0];
         let mut tmax_yr = annual_mean_temps[0];
         for &t in annual_mean_temps.iter().skip(1) {
@@ -1240,7 +1243,7 @@ impl<F: Float> CellDerivedParams<F> {
                 tmax_yr = t;
             }
         }
-        let trange_annual = (tmax_yr - tmin_yr).max(F::ZERO);
+        let trange_annual = (tmax_yr - tmin_yr.max(f(-10.0))).max(F::ZERO);
 
         Self {
             lat: cell.lat,

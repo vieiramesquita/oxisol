@@ -36,9 +36,24 @@ pub fn parse_schedule_str(content: &str) -> Result<Schedule> {
     // Line 5: Microcosm, Line 6: CO2 Systems count, Line 7: CO2 system IDs
     let co2_cnt = parse_i(6, 0);
     let sys_line_idx = if co2_cnt > 0 { 8 } else { 7 };
+    let parse_opt_name = |idx: usize| -> String {
+        let Some(line) = lines.get(idx) else {
+            return String::new();
+        };
+        // In CENTURY `.sch` files, the option identifier sits in the leading ~12 columns
+        // before the descriptive label ("Initial crop" / "Initial tree"). If those columns
+        // are blank (e.g. grassland with no initial tree), return empty string.
+        let prefix: String = line.chars().take(12).collect();
+        let tok = prefix.split_whitespace().next().unwrap_or("");
+        if tok.eq_ignore_ascii_case("initial") {
+            String::new()
+        } else {
+            tok.to_string()
+        }
+    };
     let initial_system = SystemKind::from_code(parse_i(sys_line_idx, 1));
-    let initial_crop = first_tok(sys_line_idx + 1).to_string();
-    let initial_tree = first_tok(sys_line_idx + 2).to_string();
+    let initial_crop = parse_opt_name(sys_line_idx + 1);
+    let initial_tree = parse_opt_name(sys_line_idx + 2);
 
     // Find "Year Month Option" marker
     let mut i = sys_line_idx + 3;
@@ -143,4 +158,50 @@ pub fn parse_schedule_str(content: &str) -> Result<Schedule> {
         initial_tree,
         blocks,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_blank_initial_tree_without_label_leakage() {
+        let sample = "\
+1             Starting year
+2000          Last year
+lu17.100          Site file name
+0             Labeling type
+-1            Labeling year
+-1.00         Microcosm
+1             CO2 Systems
+   1     2
+1             Initial system
+TMC3           Initial crop
+              Initial tree
+
+Year Month Option
+1             Block #   Grassland
+2000          Last year
+1             Repeats # years
+2000          Output starting year
+1             Output month
+0.08333       Output interval
+M             Weather choice
+   1    1 CROP
+TMC3  
+   1    1 FRST
+   1   11 SENM
+   1   12 LAST
+-999 -999 X
+";
+        let sched = parse_schedule_str(sample).expect("parse sample .sch");
+        assert_eq!(sched.initial_system, SystemKind::GrasslandCrop);
+        assert_eq!(sched.initial_crop, "TMC3");
+        assert_eq!(
+            sched.initial_tree, "",
+            "Blank Initial tree line must parse as empty string, not 'Initial'"
+        );
+        assert_eq!(sched.blocks.len(), 1);
+        assert_eq!(sched.blocks[0].events.len(), 4);
+    }
 }

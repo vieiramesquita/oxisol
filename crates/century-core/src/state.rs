@@ -190,7 +190,7 @@ pub struct CellState<F: Float> {
     pub senm: bool,
     /// Months since last cultivation (for decaying `clteff`).
     pub cult_months: u8,
-    /// Active cultivation decomposition multipliers `[struct, metab, active, slow]`.
+    /// Active cultivation decomposition multipliers `[som1, som2, som3, structural]` (Manual A2-32).
     pub clteff: [F; 4],
     /// Post-fire temporary root:shoot boost (decays annually).
     pub fire_frtsh: F,
@@ -212,6 +212,8 @@ pub struct CellState<F: Float> {
     pub atm_lab_frac: F,
     /// Rolling 12-month precipitation sum (cm) for annual allocation/fixation.
     pub ann_ppt: F,
+    /// Previous year's cumulative actual evapotranspiration (cm/yr) for non-symbiotic N fixation.
+    pub ann_aet: F,
     /// Cumulative growing-season transpiration ratio accumulator for grain HI.
     pub grain_tr_sum: F,
     /// Count of grain-fill months accumulated.
@@ -316,6 +318,7 @@ impl<F: Float> Default for CellState<F> {
             co2_ppm: F::from_f64(350.0),
             atm_lab_frac: F::ZERO,
             ann_ppt: F::from_f64(70.0),
+            ann_aet: F::from_f64(45.0),
             grain_tr_sum: F::ZERO,
             grain_tr_months: 0,
             cum_c_in: F::ZERO,

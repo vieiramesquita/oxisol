@@ -1,10 +1,13 @@
 //! Lock-free, NUMA-friendly parallel grid execution engine (`rayon`).
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use century_core::{
-    run_cell_simulation, AnnualOutput, CellDerivedParams, CellState, Float, SimConfig,
+    run_cell_from_state, run_cell_simulation, AnnualOutput, CellDerivedParams, CellState, Float,
+    SimConfig,
 };
+use century_io::checkpoint::NativeCellCheckpoint;
 use century_io::vemap::{PreloadedCell, PreloadedGrid};
 use rayon::prelude::*;
 
@@ -72,18 +75,34 @@ fn run_one_cell<F: Float>(
     cell: &PreloadedCell<F>,
     sim: &SimConfig,
     co2_by_year: Option<&[F]>,
+    restart: Option<&(CellState<F>, CellDerivedParams<F>)>,
 ) -> CellRunResult<F> {
     let biome = &grid.biomes[&cell.biome_id];
     let schedule = &grid.schedules[&cell.biome_id];
-    let weather_slice = std::slice::from_ref(&cell.mean_weather);
-    let (state, derived, last_annual) = run_cell_simulation(
-        biome,
-        &cell.site_input,
-        weather_slice,
-        schedule,
-        co2_by_year,
-        sim,
-    );
+    let weather_slice = cell
+        .transient_weather
+        .as_deref()
+        .unwrap_or(std::slice::from_ref(&cell.mean_weather));
+    let (state, derived, last_annual) = if let Some((st, der)) = restart {
+        run_cell_from_state(
+            st.clone(),
+            der.clone(),
+            biome,
+            weather_slice,
+            schedule,
+            co2_by_year,
+            sim,
+        )
+    } else {
+        run_cell_simulation(
+            biome,
+            &cell.site_input,
+            weather_slice,
+            schedule,
+            co2_by_year,
+            sim,
+        )
+    };
     CellRunResult {
         cell_index: cell.cell_index,
         row: cell.row,
@@ -105,7 +124,7 @@ pub fn run_grid_serial<F: Float>(
     let results: Vec<CellRunResult<F>> = grid
         .cells
         .iter()
-        .map(|cell| run_one_cell(grid, cell, &cfg.sim, co2_by_year))
+        .map(|cell| run_one_cell(grid, cell, &cfg.sim, co2_by_year, None))
         .collect();
     let elapsed = t0.elapsed().as_secs_f64().max(1.0e-9);
     let nyears = (cfg.sim.end_year - cfg.sim.start_year + 1).max(0) as usize;
@@ -130,7 +149,27 @@ pub fn run_grid_parallel<F: Float>(
     cfg: &GridRunConfig,
     co2_by_year: Option<&[F]>,
 ) -> (Vec<CellRunResult<F>>, GridRunStats) {
+    run_grid_parallel_with_restart(grid, cfg, co2_by_year, None)
+}
+
+type CheckpointMap<F> = HashMap<(usize, usize), (CellState<F>, CellDerivedParams<F>)>;
+
+/// Execute all cells in parallel using `rayon`, optionally restarting each cell from a
+/// lossless [`NativeCellCheckpoint`] (matched by `(row, col)`).
+pub fn run_grid_parallel_with_restart<F: Float>(
+    grid: &PreloadedGrid<F>,
+    cfg: &GridRunConfig,
+    co2_by_year: Option<&[F]>,
+    checkpoints: Option<&[NativeCellCheckpoint<F>]>,
+) -> (Vec<CellRunResult<F>>, GridRunStats) {
     let t0 = Instant::now();
+
+    let ckpt_map: Option<CheckpointMap<F>> = checkpoints.map(|slice| {
+        slice
+            .iter()
+            .map(|c| ((c.row, c.col), (c.state.clone(), c.derived.clone())))
+            .collect()
+    });
 
     // Order cell indices by biome to maximize instruction-cache & biome-table L2/L3 locality.
     let mut order: Vec<usize> = (0..grid.cells.len()).collect();
@@ -143,9 +182,11 @@ pub fn run_grid_parallel<F: Float>(
         order
             .par_chunks(chunk)
             .flat_map_iter(|idx_chunk| {
-                idx_chunk
-                    .iter()
-                    .map(|&idx| run_one_cell(grid, &grid.cells[idx], &cfg.sim, co2_by_year))
+                idx_chunk.iter().map(|&idx| {
+                    let cell = &grid.cells[idx];
+                    let restart = ckpt_map.as_ref().and_then(|m| m.get(&(cell.row, cell.col)));
+                    run_one_cell(grid, cell, &cfg.sim, co2_by_year, restart)
+                })
             })
             .collect::<Vec<CellRunResult<F>>>()
     };

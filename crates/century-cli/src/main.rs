@@ -8,13 +8,15 @@ use std::time::Instant;
 
 use century_core::{CompatibilityProfile, ElementMode, Float, SimConfig};
 use century_grid::{
-    batch_defac_f32x8, batch_som_decay_f32x8, run_grid_parallel, run_grid_serial, GridRunConfig,
-    SomSoaBatchF32,
+    batch_defac_f32x8, batch_som_decay_f32x8, run_grid_parallel, run_grid_parallel_with_restart,
+    run_grid_serial, GridRunConfig, SomSoaBatchF32,
 };
 use century_io::checkpoint::{
-    read_site_nc, write_native_checkpoint, write_site_nc, NativeCellCheckpoint, SiteNcPools,
+    read_native_checkpoint, read_site_nc, write_native_checkpoint, write_site_nc,
+    NativeCellCheckpoint, SiteNcPools,
 };
-use century_io::vemap::load_vemap_grid;
+use century_io::co2_dat::Co2Series;
+use century_io::vemap::{attach_transient_weather, load_vemap_grid};
 use clap::{Parser, Subcommand, ValueEnum};
 use wide::f32x8;
 
@@ -50,47 +52,68 @@ enum PrecisionArg {
     F32,
 }
 
+#[derive(clap::Args)]
+struct RunArgs {
+    /// Path to input dataset directory containing .100, .sch, .v2, geog.nc, phase1.ncdf.
+    #[arg(long)]
+    data_dir: PathBuf,
+    /// Optional path to rock fraction (%) .v2 grid.
+    #[arg(long)]
+    rock: Option<PathBuf>,
+    /// Optional path to mineral soil depth (cm) .v2 grid.
+    #[arg(long)]
+    zminrl: Option<PathBuf>,
+    /// Starting simulation year (default 1).
+    #[arg(long, default_value_t = 1)]
+    start_year: i32,
+    /// Number of simulation years (default 1000).
+    #[arg(long, default_value_t = 1000)]
+    years: i32,
+    /// Optional path to annual CO2 table (`co2.dat`, columns: `year ppm`).
+    #[arg(long)]
+    co2_file: Option<PathBuf>,
+    /// Optional transient precipitation NetCDF-3 file (e.g. `pptT3.nc`).
+    #[arg(long)]
+    transient_ppt: Option<PathBuf>,
+    /// Optional transient min temperature NetCDF-3 file (e.g. `tnT3.nc`).
+    #[arg(long)]
+    transient_tn: Option<PathBuf>,
+    /// Optional transient max temperature NetCDF-3 file (e.g. `txT3.nc`).
+    #[arg(long)]
+    transient_tx: Option<PathBuf>,
+    /// Optional lossless native JSON checkpoint to restart from (e.g. spinup -> transient).
+    #[arg(long)]
+    restart_checkpoint: Option<PathBuf>,
+    /// Compatibility profile (`clean` = ScientificClean default, `parity` = VemapV45Parity).
+    #[arg(long, value_enum, default_value_t = ProfileArg::Clean)]
+    profile: ProfileArg,
+    /// Floating-point precision (`f64` recommended for clean science, `f32` for parity).
+    #[arg(long, value_enum, default_value_t = PrecisionArg::F64)]
+    precision: PrecisionArg,
+    /// Number of worker threads (defaults to all logical cores; tune for EPYC NUMA).
+    #[arg(long)]
+    threads: Option<usize>,
+    /// Cells per parallel chunk (default 16).
+    #[arg(long, default_value_t = 16)]
+    chunk_size: usize,
+    /// Optional path to write `site.nc`-compatible NetCDF-3 output.
+    #[arg(long)]
+    out_nc: Option<PathBuf>,
+    /// Optional path to write full lossless native JSON checkpoint.
+    #[arg(long)]
+    out_checkpoint: Option<PathBuf>,
+    /// Optional limit on number of cells (for quick smoke runs).
+    #[arg(long)]
+    max_cells: Option<usize>,
+    /// Optional single biome ID filter.
+    #[arg(long)]
+    biome: Option<i32>,
+}
+
 #[derive(Subcommand)]
 enum Commands {
-    /// Run a spatial grid simulation (VEMAP or custom grid directory).
-    Run {
-        /// Path to input dataset directory containing .100, .sch, .v2, geog.nc, phase1.ncdf.
-        #[arg(long)]
-        data_dir: PathBuf,
-        /// Optional path to rock fraction (%) .v2 grid.
-        #[arg(long)]
-        rock: Option<PathBuf>,
-        /// Optional path to mineral soil depth (cm) .v2 grid.
-        #[arg(long)]
-        zminrl: Option<PathBuf>,
-        /// Number of simulation years (default 1000).
-        #[arg(long, default_value_t = 1000)]
-        years: i32,
-        /// Compatibility profile (`clean` = ScientificClean default, `parity` = VemapV45Parity).
-        #[arg(long, value_enum, default_value_t = ProfileArg::Clean)]
-        profile: ProfileArg,
-        /// Floating-point precision (`f64` recommended for clean science, `f32` for parity).
-        #[arg(long, value_enum, default_value_t = PrecisionArg::F64)]
-        precision: PrecisionArg,
-        /// Number of worker threads (defaults to all logical cores; tune for EPYC NUMA).
-        #[arg(long)]
-        threads: Option<usize>,
-        /// Cells per parallel chunk (default 16).
-        #[arg(long, default_value_t = 16)]
-        chunk_size: usize,
-        /// Optional path to write `site.nc`-compatible NetCDF-3 output.
-        #[arg(long)]
-        out_nc: Option<PathBuf>,
-        /// Optional path to write full lossless native JSON checkpoint.
-        #[arg(long)]
-        out_checkpoint: Option<PathBuf>,
-        /// Optional limit on number of cells (for quick smoke runs).
-        #[arg(long)]
-        max_cells: Option<usize>,
-        /// Optional single biome ID filter.
-        #[arg(long)]
-        biome: Option<i32>,
-    },
+    /// Run a spatial grid simulation (VEMAP or custom grid directory, spinup or transient).
+    Run(Box<RunArgs>),
 
     /// Validate a `century-rs` NetCDF output against an oracle `site.nc` file.
     Validate {
@@ -126,11 +149,17 @@ enum Commands {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_grid_typed<F: Float + serde::Serialize>(
+fn run_grid_typed<F: Float + serde::Serialize + serde::de::DeserializeOwned>(
     data_dir: &PathBuf,
     rock: Option<&PathBuf>,
     zminrl: Option<&PathBuf>,
+    start_year: i32,
     years: i32,
+    co2_file: Option<&PathBuf>,
+    transient_ppt: Option<&PathBuf>,
+    transient_tn: Option<&PathBuf>,
+    transient_tx: Option<&PathBuf>,
+    restart_checkpoint: Option<&PathBuf>,
     profile: CompatibilityProfile,
     threads: Option<usize>,
     chunk_size: usize,
@@ -145,6 +174,10 @@ fn run_grid_typed<F: Float + serde::Serialize>(
         rock.map(|p| p.as_path()),
         zminrl.map(|p| p.as_path()),
     )?;
+    if let (Some(pp), Some(tn), Some(tx)) = (transient_ppt, transient_tn, transient_tx) {
+        let ny = attach_transient_weather(&mut grid, pp, tn, tx)?;
+        println!("Attached transient NetCDF weather ({ny} years/cell).");
+    }
     if let Some(bf) = biome_filter {
         grid.cells.retain(|c| c.biome_id == bf);
     }
@@ -154,14 +187,44 @@ fn run_grid_typed<F: Float + serde::Serialize>(
     for (i, c) in grid.cells.iter_mut().enumerate() {
         c.cell_index = i;
     }
+
+    let co2_vec: Option<Vec<F>> = if let Some(cf) = co2_file {
+        let series = Co2Series::load(cf)?;
+        let n = years.max(0) as usize;
+        let v: Vec<F> = (0..n)
+            .map(|i| F::from_f64(series.concentration(start_year + i as i32, 350.0)))
+            .collect();
+        println!(
+            "Loaded CO2 series from {} ({} entries).",
+            cf.display(),
+            series.by_year.len()
+        );
+        Some(v)
+    } else {
+        None
+    };
+
+    let ckpts: Option<Vec<NativeCellCheckpoint<F>>> = if let Some(rc) = restart_checkpoint {
+        let loaded = read_native_checkpoint::<F, _>(rc)?;
+        println!(
+            "Loaded {} cell checkpoints from {} for restart.",
+            loaded.len(),
+            rc.display()
+        );
+        Some(loaded)
+    } else {
+        None
+    };
+
     let load_s = t_load.elapsed().as_secs_f64();
 
+    let end_year = start_year + years - 1;
     let cfg = GridRunConfig {
         sim: SimConfig {
             profile,
             elements: ElementMode::CarbonNitrogen,
-            start_year: 1,
-            end_year: years,
+            start_year,
+            end_year,
             ..SimConfig::default()
         },
         num_threads: threads,
@@ -170,16 +233,18 @@ fn run_grid_typed<F: Float + serde::Serialize>(
     };
 
     println!(
-        "Loaded {} cells across {} biomes in {:.3}s. Running {} years ({:?}, {})...",
+        "Loaded {} cells across {} biomes in {:.3}s. Running years {}..={} ({:?}, {})...",
         grid.cells.len(),
         grid.biomes.len(),
         load_s,
-        years,
+        start_year,
+        end_year,
         profile,
         std::any::type_name::<F>()
     );
 
-    let (results, stats) = run_grid_parallel(&grid, &cfg, None);
+    let (results, stats) =
+        run_grid_parallel_with_restart(&grid, &cfg, co2_vec.as_deref(), ckpts.as_deref());
     println!(
         "Completed {} cells x {} years in {:.3}s | {:.1} cell-years/s | {:.2}M cell-months/s",
         stats.ncells,
@@ -461,48 +526,48 @@ fn run_bench(
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let res: Result<bool, Box<dyn std::error::Error>> = match cli.command {
-        Commands::Run {
-            data_dir,
-            rock,
-            zminrl,
-            years,
-            profile,
-            precision,
-            threads,
-            chunk_size,
-            out_nc,
-            out_checkpoint,
-            max_cells,
-            biome,
-        } => {
-            let prof: CompatibilityProfile = profile.into();
-            match precision {
+        Commands::Run(args) => {
+            let a = *args;
+            let prof: CompatibilityProfile = a.profile.into();
+            match a.precision {
                 PrecisionArg::F64 => run_grid_typed::<f64>(
-                    &data_dir,
-                    rock.as_ref(),
-                    zminrl.as_ref(),
-                    years,
+                    &a.data_dir,
+                    a.rock.as_ref(),
+                    a.zminrl.as_ref(),
+                    a.start_year,
+                    a.years,
+                    a.co2_file.as_ref(),
+                    a.transient_ppt.as_ref(),
+                    a.transient_tn.as_ref(),
+                    a.transient_tx.as_ref(),
+                    a.restart_checkpoint.as_ref(),
                     prof,
-                    threads,
-                    chunk_size,
-                    out_nc.as_ref(),
-                    out_checkpoint.as_ref(),
-                    max_cells,
-                    biome,
+                    a.threads,
+                    a.chunk_size,
+                    a.out_nc.as_ref(),
+                    a.out_checkpoint.as_ref(),
+                    a.max_cells,
+                    a.biome,
                 )
                 .map(|()| true),
                 PrecisionArg::F32 => run_grid_typed::<f32>(
-                    &data_dir,
-                    rock.as_ref(),
-                    zminrl.as_ref(),
-                    years,
+                    &a.data_dir,
+                    a.rock.as_ref(),
+                    a.zminrl.as_ref(),
+                    a.start_year,
+                    a.years,
+                    a.co2_file.as_ref(),
+                    a.transient_ppt.as_ref(),
+                    a.transient_tn.as_ref(),
+                    a.transient_tx.as_ref(),
+                    a.restart_checkpoint.as_ref(),
                     prof,
-                    threads,
-                    chunk_size,
-                    out_nc.as_ref(),
-                    out_checkpoint.as_ref(),
-                    max_cells,
-                    biome,
+                    a.threads,
+                    a.chunk_size,
+                    a.out_nc.as_ref(),
+                    a.out_checkpoint.as_ref(),
+                    a.max_cells,
+                    a.biome,
                 )
                 .map(|()| true),
             }

@@ -273,24 +273,38 @@ fn tier_b_cultivation_and_erosion_reduce_som() {
         ..SimConfig::default()
     };
 
-    let base_sched = Schedule {
+    // No-till harvested wheat baseline (grain + partial straw removal).
+    let mut base_sched = Schedule {
         initial_crop: "WHEAT".into(),
         ..Schedule::default()
     };
+    base_sched.blocks[0].events.push(ScheduledEvent {
+        rel_year: 1,
+        month: 8,
+        kind: EventKind::Harv("GRAIN".into()),
+    });
     let st_base = assert_conserved_run(&biome, &cell_in, &w, &base_sched, &cfg);
 
+    // Conventional tillage (annual plowing + harvest) incorporates surface litter,
+    // accelerates SOM respiration, and reduces equilibrium SOM compared to no-till.
     let mut cult_sched = base_sched.clone();
     cult_sched.blocks[0].events.push(ScheduledEvent {
         rel_year: 1,
-        month: 4,
+        month: 6,
         kind: EventKind::Cult("PLOW".into()),
     });
     let st_cult = assert_conserved_run(&biome, &cell_in, &w, &cult_sched, &cfg);
     assert!(
         st_cult.somsc() < st_base.somsc(),
-        "Annual plowing should accelerate SOM decay: cult={} base={}",
+        "Conventional tillage should reduce SOM vs no-till: cult={} base={}",
         st_cult.somsc(),
         st_base.somsc()
+    );
+    assert!(
+        st_cult.strucc[0].total() < st_base.strucc[0].total(),
+        "Plowing must incorporate surface structural litter: cult={} base={}",
+        st_cult.strucc[0].total(),
+        st_base.strucc[0].total()
     );
 
     let mut erod_sched = base_sched.clone();
@@ -562,4 +576,108 @@ fn tier_b_ivauto_modes_and_co2_ramp_and_isotopes() {
     );
     assert!(st350.som2c.lab > 0.0, "C-14 should propagate into slow SOM");
     assert!(st700.total_labeled_carbon() > 0.0);
+}
+
+#[test]
+fn edge_case_stress_extremes_and_ledger_overflow_conserve_mass() {
+    use century_core::{FlowLedger, PoolId};
+
+    let biome = full_biome();
+    let sched = Schedule {
+        start_year: 1,
+        last_year: 5,
+        initial_crop: "WHEAT".into(),
+        ..Schedule::default()
+    };
+    let cfg = SimConfig {
+        profile: CompatibilityProfile::ScientificClean,
+        elements: ElementMode::FullCnps,
+        start_year: 1,
+        end_year: 5,
+        audit_mass_balance: true,
+        ..SimConfig::default()
+    };
+
+    // 1. Hyper-arid zero-precipitation desert (precip = 0 for all 12 months).
+    let desert = [MonthlyWeather {
+        precip_cm: 0.0,
+        tmin_c: 15.0,
+        tmax_c: 42.0,
+    }; 12];
+    let st_desert = assert_conserved_run(
+        &biome,
+        &CellSiteInput::from_site(&biome.site_defaults),
+        &desert,
+        &sched,
+        &cfg,
+    );
+    assert!(st_desert.somsc().is_finite() && st_desert.somsc() >= 0.0);
+
+    // 2. Permafrost cell (tmax < -10 °C all year, continuous snow accumulation).
+    let permafrost = [MonthlyWeather {
+        precip_cm: 3.0,
+        tmin_c: -32.0,
+        tmax_c: -12.0,
+    }; 12];
+    let st_pf = assert_conserved_run(
+        &biome,
+        &CellSiteInput::from_site(&biome.site_defaults),
+        &permafrost,
+        &sched,
+        &cfg,
+    );
+    assert!(st_pf.snow > 0.0 && st_pf.stemp.is_finite());
+
+    // 3. Extreme pure sand (sand=1.0), pure clay (clay=1.0), high rock (0.90), and single layer (nlayer=1).
+    let extreme_soils = [
+        (1.0, 0.0, 0.0, 0.0, 6usize),
+        (0.0, 0.0, 1.0, 0.0, 6usize),
+        (0.4, 0.3, 0.3, 0.90, 6usize),
+        (0.5, 0.3, 0.2, 0.10, 1usize),
+    ];
+    let w = temperate_weather();
+    for (sand, silt, clay, rock, nl) in extreme_soils {
+        let mut b = full_biome();
+        b.site_defaults.nlayer = nl;
+        b.site_defaults.nlaypg = 1.min(nl);
+        let mut ci = CellSiteInput::from_site(&b.site_defaults);
+        ci.sand = sand;
+        ci.silt = silt;
+        ci.clay = clay;
+        ci.rock_frac = rock;
+        let st = assert_conserved_run(&b, &ci, &w, &sched, &cfg);
+        assert!(
+            st.somsc().is_finite() && st.somsc() > 0.0,
+            "Extreme soil ({sand},{clay},{rock},{nl}) failed: somsc={}",
+            st.somsc()
+        );
+        for l in 0..nl {
+            assert!(st.asmos[l].is_finite() && st.asmos[l] >= 0.0);
+        }
+    }
+
+    // 4. FlowLedger overflow burst (> 300 queued flows before commit) must NEVER drop mass.
+    let (mut st, _) = initialize_cell(
+        &biome,
+        &CellSiteInput::from_site(&biome.site_defaults),
+        &w,
+        &sched,
+        &cfg,
+    );
+    let init_c = st.total_carbon();
+    let mut ledger = FlowLedger::<f64>::new();
+    for _ in 0..320 {
+        ledger.schedule(PoolId::AtmosphereC, PoolId::Som2C, 0.25);
+    }
+    assert_eq!(ledger.len(), 320);
+    ledger.commit(&mut st);
+    assert!(ledger.is_empty());
+    let expected_delta = 320.0 * 0.25;
+    assert!(
+        ((st.total_carbon() - init_c) - expected_delta).abs() < 1.0e-12,
+        "FlowLedger overflow dropped mass: delta={} expected={}",
+        st.total_carbon() - init_c,
+        expected_delta
+    );
+    assert!((st.cum_c_in - expected_delta).abs() < 1.0e-12);
 }

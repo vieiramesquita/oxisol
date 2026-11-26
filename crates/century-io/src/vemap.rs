@@ -30,12 +30,16 @@ pub struct PreloadedCell<F: Float> {
     pub col: usize,
     /// 0-based dense cell index (`0..ncells`).
     pub cell_index: usize,
+    /// Optional 0-based land-cell index from `geog.nc` `mask2` for transient NetCDF lookup.
+    pub transient_cell_id: Option<usize>,
     /// VEMAP biome/landuse ID (`1..=21`).
     pub biome_id: i32,
     /// Cell-specific geographic & soil inputs.
     pub site_input: CellSiteInput<F>,
     /// Mean monthly climate (12 months).
     pub mean_weather: [MonthlyWeather<F>; 12],
+    /// Optional multi-year transient monthly weather (`Vec<[MonthlyWeather<F>; 12]>`).
+    pub transient_weather: Option<Vec<[MonthlyWeather<F>; 12]>>,
 }
 
 /// Complete preloaded grid dataset with immutable `Arc<RawBiomeParams<F>>` tables.
@@ -114,6 +118,7 @@ pub fn load_vemap_grid<F: Float, P: AsRef<Path>>(
     let lat_arr = geog.read_f32("lat")?;
     let lon_arr = geog.read_f32("lon")?;
     let elev_arr = geog.read_f32("elevation")?;
+    let mask2_arr = geog.read_i32("mask2").ok();
 
     let climate = NcFile::open(dir.join("phase1.ncdf"))?;
     let ppt_arr = climate.read_f32("ppt")?;
@@ -230,14 +235,24 @@ pub fn load_vemap_grid<F: Float, P: AsRef<Path>>(
             });
 
             let cell_index = cells.len();
+            let transient_cell_id = mask2_arr.as_ref().and_then(|m2| {
+                let id = m2[flat];
+                if id > 0 {
+                    Some((id - 1) as usize)
+                } else {
+                    None
+                }
+            });
             mask[flat] = (cell_index + 1) as i32;
             cells.push(PreloadedCell {
                 row: r,
                 col: c,
                 cell_index,
+                transient_cell_id,
                 biome_id: bid,
                 site_input,
                 mean_weather,
+                transient_weather: None,
             });
         }
     }
@@ -250,4 +265,86 @@ pub fn load_vemap_grid<F: Float, P: AsRef<Path>>(
         schedules,
         cells,
     })
+}
+
+/// Attach multi-year transient monthly weather from pure-Rust NetCDF-3 files
+/// (`pptT*.nc` variable `ppt` in mm/month, `tnT*.nc` variable `tmin` in °C,
+/// `txT*.nc` variable `tmax` in °C; shape `(ncells_land, nmonths)`).
+///
+/// Returns the number of complete simulation years loaded per cell.
+pub fn attach_transient_weather<F: Float, P: AsRef<Path>>(
+    grid: &mut PreloadedGrid<F>,
+    ppt_path: P,
+    tn_path: P,
+    tx_path: P,
+) -> Result<usize> {
+    let nc_p = NcFile::open(ppt_path)?;
+    let nc_tn = NcFile::open(tn_path)?;
+    let nc_tx = NcFile::open(tx_path)?;
+
+    let p_var = if nc_p.vars.contains_key("ppt") {
+        "ppt"
+    } else {
+        return Err(IoError::NetCdf(
+            "transient ppt file missing 'ppt' var".into(),
+        ));
+    };
+    let tn_var = if nc_tn.vars.contains_key("tmin") {
+        "tmin"
+    } else if nc_tn.vars.contains_key("tn") {
+        "tn"
+    } else {
+        return Err(IoError::NetCdf(
+            "transient tn file missing 'tmin'/'tn' var".into(),
+        ));
+    };
+    let tx_var = if nc_tx.vars.contains_key("tmax") {
+        "tmax"
+    } else if nc_tx.vars.contains_key("tx") {
+        "tx"
+    } else {
+        return Err(IoError::NetCdf(
+            "transient tx file missing 'tmax'/'tx' var".into(),
+        ));
+    };
+
+    let shape = nc_p.var_shape(p_var)?;
+    if shape.len() != 2 || shape[1] < 12 {
+        return Err(IoError::NetCdf(format!(
+            "unexpected transient climate shape {shape:?}; expected (ncells, nmonths)"
+        )));
+    }
+    let n_land = shape[0];
+    let n_months = shape[1];
+    let n_years = n_months / 12;
+
+    let ppt_all = nc_p.read_f32(p_var)?;
+    let tn_all = nc_tn.read_f32(tn_var)?;
+    let tx_all = nc_tx.read_f32(tx_var)?;
+
+    for cell in &mut grid.cells {
+        let Some(tid) = cell.transient_cell_id else {
+            continue;
+        };
+        if tid >= n_land {
+            continue;
+        }
+        let base = tid * n_months;
+        let mut by_year = Vec::with_capacity(n_years);
+        for yr in 0..n_years {
+            let y_off = base + yr * 12;
+            let months: [MonthlyWeather<F>; 12] = core::array::from_fn(|m| {
+                let idx = y_off + m;
+                MonthlyWeather {
+                    precip_cm: F::from_f32((ppt_all[idx] / 10.0).max(0.0)),
+                    tmin_c: F::from_f32(tn_all[idx]),
+                    tmax_c: F::from_f32(tx_all[idx]),
+                }
+            });
+            by_year.push(months);
+        }
+        cell.transient_weather = Some(by_year);
+    }
+
+    Ok(n_years)
 }

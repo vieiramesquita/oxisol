@@ -67,11 +67,7 @@ pub fn batch_defac_f32x8(stemp: f32x8, rel_water: f32x8, _teff: [f32; 3]) -> f32
 
     let raw_t =
         f32x8::splat(0.56) + (f32x8::splat(1.46) / pi) * atan_approx_f32x8(c * (stemp - t_off));
-    let norm_scalar = 0.56
-        + (1.46 / core::f32::consts::PI) * (core::f32::consts::PI * 0.0309 * (30.0 - 15.7)).atan();
-    let tf = (raw_t / f32x8::splat(norm_scalar))
-        .max(f32x8::splat(0.01))
-        .min(f32x8::splat(1.5));
+    let tf = raw_t.max(f32x8::splat(0.01)).min(f32x8::splat(1.5));
 
     let r = rel_water.max(f32x8::splat(0.0)).min(f32x8::splat(5.0));
     let wf = (f32x8::splat(1.0)
@@ -87,16 +83,13 @@ pub fn batch_defac_f32x8(stemp: f32x8, rel_water: f32x8, _teff: [f32; 3]) -> f32
 pub fn batch_defac_f64x4(stemp: f64x4, rel_water: f64x4, _teff: [f64; 3]) -> f64x4 {
     let s_arr = stemp.to_array();
     let r_arr = rel_water.to_array();
-    let norm = 0.56
-        + (1.46 / core::f64::consts::PI) * (core::f64::consts::PI * 0.0309 * (30.0 - 15.7)).atan();
-    let inv_norm = 1.0 / norm;
 
     let mut tf_arr = [0.0f64; 4];
     for i in 0..4 {
         let raw = 0.56
             + (1.46 / core::f64::consts::PI)
                 * (core::f64::consts::PI * 0.0309 * (s_arr[i] - 15.7)).atan();
-        tf_arr[i] = (raw * inv_norm).clamp(0.01, 1.5);
+        tf_arr[i] = raw.clamp(0.01, 1.5);
     }
     let tf = f64x4::from(tf_arr);
     let r = f64x4::from(r_arr)

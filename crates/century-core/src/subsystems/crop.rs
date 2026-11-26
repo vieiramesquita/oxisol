@@ -25,6 +25,27 @@ pub fn pprdwc<F: Float>(rel_water: F, pprpts: [F; 3]) -> F {
     curve.clamp_val(F::ZERO, F::ONE)
 }
 
+/// Dynamic monthly available mineral nutrient fraction `favail` (Manual A2-9):
+/// - N (`e=0`): `fix.favail[0]`
+/// - P (`e=1`): linearly interpolated between `favail[3]` (min) and `favail[4]` (max)
+///   as top-layer mineral N increases from 0 to `favail[5]`.
+/// - S (`e=2`): `fix.favail[2]`
+#[inline]
+pub fn element_favail<F: Float>(e: usize, minerl_n0: F, fix: &FixParams<F>) -> F {
+    let f = F::from_f64;
+    match e {
+        0 => fix.favail[0].clamp_val(f(0.05), F::ONE),
+        1 => {
+            let min_p = fix.favail[3].clamp_val(f(0.05), F::ONE);
+            let max_p = fix.favail[4].clamp_val(min_p, F::ONE);
+            let ref_n = fix.favail[5].max(F::EPS_GUARD);
+            let frac = (minerl_n0 / ref_n).clamp_val(F::ZERO, F::ONE);
+            min_p + frac * (max_p - min_p)
+        }
+        _ => fix.favail[2].clamp_val(f(0.05), F::ONE),
+    }
+}
+
 /// Root biomass impact factor on available nutrient uptake (`rtimp`).
 #[inline]
 pub fn root_impact<F: Float>(bglivc: F, fix: &FixParams<F>) -> F {
@@ -32,15 +53,19 @@ pub fn root_impact<F: Float>(bglivc: F, fix: &FixParams<F>) -> F {
 }
 
 /// Execute monthly grassland/crop production, nutrient uptake, senescence, and litterfall.
+///
+/// In `Savanna` systems, `tree_shade_fac` (`0..=1`) and `grass_n_share` (`0..=1`) encode
+/// woody canopy shading and basal-area nutrient partitioning (Manual §3.7.3).
 #[allow(clippy::too_many_arguments)]
 pub fn step_crop<F: Float>(
     state: &mut CellState<F>,
     derived: &CellDerivedParams<F>,
     fix: &FixParams<F>,
     crop: &CropParams<F>,
-    weather: &MonthlyWeather<F>,
+    _weather: &MonthlyWeather<F>,
     liquid_input: F,
-    tree_lai: F,
+    tree_shade_fac: F,
+    grass_n_share: F,
     co2: &Co2Effects<F>,
     elements: ElementMode,
     ledger: &mut FlowLedger<F>,
@@ -53,14 +78,12 @@ pub fn step_crop<F: Float>(
     state.pltlig[1] = (crop.fligni[0][1] + crop.fligni[1][1] * ann_ppt).clamp_val(f(0.02), f(0.5));
 
     // --- 1. Potential & Actual Production (when growing season is active) ---
-    // Do not spontaneously generate grass in pure-forest cells with zero initial herbaceous C.
-    let has_herbaceous_seed = state.aglivc.total() > F::EPS_GUARD
-        || state.bglivc.total() > F::EPS_GUARD
-        || state.stdedc.total() > F::EPS_GUARD;
-    if state.crpgrw && has_herbaceous_seed {
-        let t_avg = (weather.tmin_c + weather.tmax_c) * f(0.5);
+    // Note: Pure forest systems (`SystemKind::Forest`) skip `step_crop` entirely in `step_month`.
+    // In `GrasslandCrop` and `Savanna` systems, herbaceous growth proceeds whenever `crpgrw == true`.
+    if state.crpgrw && tree_shade_fac > F::EPS_GUARD && grass_n_share > F::EPS_GUARD {
+        // Manual §3.7.1 p. 3-14: crop temperature response uses root/soil temperature `stemp`.
         let t_fac = gpdf(
-            t_avg,
+            state.stemp,
             crop.ppdf[0],
             crop.ppdf[1],
             crop.ppdf[2],
@@ -69,13 +92,9 @@ pub fn step_crop<F: Float>(
         let rel_w = (state.avh2o[0] + liquid_input) / state.pet.max(f(0.1));
         let w_fac = pprdwc(rel_w, fix.pprpts);
 
-        // Shading by standing dead litter and (in savannas) tree canopy LAI.
+        // Shading by standing dead litter and (in savannas) tree canopy cover.
         let dead_shade = (F::ONE - f(0.0008) * state.stdedc.total()).clamp_val(f(0.2), F::ONE);
-        let tree_shade = if tree_lai > F::ZERO {
-            (-f(0.35) * tree_lai).exp().clamp_val(f(0.05), F::ONE)
-        } else {
-            F::ONE
-        };
+        let tree_shade = tree_shade_fac.clamp_val(F::ZERO, F::ONE);
 
         // Live biomass establishment curve.
         let bio_fac = if crop.bioflg > f(0.5) && crop.fulcan > F::EPS_GUARD {
@@ -118,6 +137,7 @@ pub fn step_crop<F: Float>(
             } else {
                 F::ONE
             };
+            let n_share = grass_n_share.clamp_val(F::ZERO, F::ONE);
 
             let mut c_limit = pot_total;
             let mut r_min_ag = [F::ONE; MAX_ELEM];
@@ -127,12 +147,8 @@ pub fn step_crop<F: Float>(
             let mut e_avail = [F::ZERO; MAX_ELEM];
 
             for e in 0..nelem {
-                let fav = match e {
-                    0 => fix.favail[0],
-                    1 => fix.favail[1].max(f(0.1)),
-                    _ => fix.favail[2].max(f(0.2)),
-                };
-                let soil_avail = state.mineral_sum(derived.nlaypg, e) * fav * rti;
+                let fav = element_favail(e, state.minerl[0][0], fix);
+                let soil_avail = state.mineral_sum(derived.nlaypg, e) * fav * rti * n_share;
                 e_avail[e] = soil_avail + state.crpstg[e];
 
                 r_min_ag[e] = (crop.pramn[e][0] + bio_frac * (crop.pramn[e][1] - crop.pramn[e][0]))

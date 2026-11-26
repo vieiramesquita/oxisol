@@ -5,8 +5,10 @@ use crate::float::Float;
 use crate::params::{MAX_ELEM, MAX_LAYERS};
 use crate::state::{CarbonPool, CellState};
 
-/// Maximum queued flows per commit batch (stack-allocated, zero heap allocation).
-pub const MAX_LEDGER_FLOWS: usize = 256;
+/// Maximum inline stack-queued flows per commit batch (zero heap allocation in normal steps).
+/// Any overflow beyond this threshold transparently spills to a heap buffer so flows are
+/// NEVER silently dropped even under extreme multi-event bursts.
+pub const MAX_LEDGER_FLOWS: usize = 128;
 
 /// Strongly-typed identifier for every carbon pool, nutrient pool, and system boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -193,10 +195,12 @@ impl<F: Float> MassBalanceReport<F> {
     }
 }
 
-/// Stack-allocated transfer ledger guaranteeing exact conservation and zero heap allocation.
+/// Stack-allocated transfer ledger guaranteeing exact conservation and zero heap allocation
+/// in normal steps, with a transparent overflow spill buffer so flows are NEVER dropped.
 pub struct FlowLedger<F: Float> {
     flows: [Flow<F>; MAX_LEDGER_FLOWS],
     len: usize,
+    spill: Vec<Flow<F>>,
 }
 
 impl<F: Float> Default for FlowLedger<F> {
@@ -206,7 +210,7 @@ impl<F: Float> Default for FlowLedger<F> {
 }
 
 impl<F: Float> FlowLedger<F> {
-    /// Create an empty stack-allocated ledger.
+    /// Create an empty stack-allocated ledger (zero heap allocation).
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -217,6 +221,7 @@ impl<F: Float> FlowLedger<F> {
                 lab_frac: None,
             }; MAX_LEDGER_FLOWS],
             len: 0,
+            spill: Vec::new(),
         }
     }
 
@@ -224,23 +229,23 @@ impl<F: Float> FlowLedger<F> {
     #[inline(always)]
     pub fn clear(&mut self) {
         self.len = 0;
+        self.spill.clear();
     }
 
-    /// Number of queued flows.
+    /// Number of queued flows (inline + overflow spill).
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.len
+        self.len + self.spill.len()
     }
 
     /// Returns true if no flows are queued.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.len == 0
+        self.len == 0 && self.spill.is_empty()
     }
 
     /// Schedule a transfer `amount` from `from` to `to`.
-    /// Ignores zero or non-positive amounts. If the fixed stack buffer fills up,
-    /// callers should commit between phases; `push_or_commit` handles overflow safely.
+    /// Ignores zero, non-positive, or non-finite amounts.
     #[inline]
     pub fn schedule(&mut self, from: PoolId, to: PoolId, amount: F) {
         self.schedule_with_iso(from, to, amount, None);
@@ -252,22 +257,21 @@ impl<F: Float> FlowLedger<F> {
         if amount <= F::ZERO || !amount.is_finite_val() || from == to {
             return;
         }
-        debug_assert!(
-            self.len < MAX_LEDGER_FLOWS,
-            "FlowLedger overflow: commit between subsystems"
-        );
+        let fl = Flow {
+            from,
+            to,
+            amount,
+            lab_frac,
+        };
         if self.len < MAX_LEDGER_FLOWS {
-            self.flows[self.len] = Flow {
-                from,
-                to,
-                amount,
-                lab_frac,
-            };
+            self.flows[self.len] = fl;
             self.len += 1;
+        } else {
+            self.spill.push(fl);
         }
     }
 
-    /// Schedule and auto-commit if buffer is nearly full.
+    /// Schedule and auto-commit if inline stack buffer is nearly full.
     #[inline]
     pub fn schedule_safe(&mut self, state: &mut CellState<F>, from: PoolId, to: PoolId, amount: F) {
         if self.len >= MAX_LEDGER_FLOWS - 2 {
@@ -276,37 +280,47 @@ impl<F: Float> FlowLedger<F> {
         self.schedule(from, to, amount);
     }
 
-    /// Atomically apply all queued flows to `state`, enforcing pool non-negativity,
-    /// preserving isotope ratios, and updating boundary conservation counters.
+    /// Atomically apply all queued flows (inline + any spill) to `state`, enforcing pool
+    /// non-negativity, preserving isotope ratios, and updating boundary conservation counters.
     pub fn commit(&mut self, state: &mut CellState<F>) {
         let count = self.len;
         self.len = 0;
         for i in 0..count {
-            let fl = self.flows[i];
-            if fl.amount <= F::ZERO || !fl.amount.is_finite_val() {
-                continue;
+            apply_one_flow(state, self.flows[i]);
+        }
+        if !self.spill.is_empty() {
+            for i in 0..self.spill.len() {
+                apply_one_flow(state, self.spill[i]);
             }
-            if fl.from.is_carbon() {
-                let (actual, lf) = take_carbon(state, fl.from, fl.amount, fl.lab_frac);
-                if actual > F::ZERO {
-                    give_carbon(state, fl.to, actual, lf);
-                    if fl.from.is_boundary() && !fl.to.is_boundary() {
-                        state.cum_c_in += actual;
-                    } else if !fl.from.is_boundary() && fl.to.is_boundary() {
-                        state.cum_c_out += actual;
-                    }
-                }
-            } else {
-                let actual = take_elem(state, fl.from, fl.amount);
-                if actual > F::ZERO {
-                    give_elem(state, fl.to, actual);
-                    if let Some(e) = elem_index(fl.from).or_else(|| elem_index(fl.to)) {
-                        if fl.from.is_boundary() && !fl.to.is_boundary() {
-                            state.cum_e_in[e] += actual;
-                        } else if !fl.from.is_boundary() && fl.to.is_boundary() {
-                            state.cum_e_out[e] += actual;
-                        }
-                    }
+            self.spill.clear();
+        }
+    }
+}
+
+#[inline(always)]
+fn apply_one_flow<F: Float>(state: &mut CellState<F>, fl: Flow<F>) {
+    if fl.amount <= F::ZERO || !fl.amount.is_finite_val() {
+        return;
+    }
+    if fl.from.is_carbon() {
+        let (actual, lf) = take_carbon(state, fl.from, fl.amount, fl.lab_frac);
+        if actual > F::ZERO {
+            give_carbon(state, fl.to, actual, lf);
+            if fl.from.is_boundary() && !fl.to.is_boundary() {
+                state.cum_c_in += actual;
+            } else if !fl.from.is_boundary() && fl.to.is_boundary() {
+                state.cum_c_out += actual;
+            }
+        }
+    } else {
+        let actual = take_elem(state, fl.from, fl.amount);
+        if actual > F::ZERO {
+            give_elem(state, fl.to, actual);
+            if let Some(e) = elem_index(fl.from).or_else(|| elem_index(fl.to)) {
+                if fl.from.is_boundary() && !fl.to.is_boundary() {
+                    state.cum_e_in[e] += actual;
+                } else if !fl.from.is_boundary() && fl.to.is_boundary() {
+                    state.cum_e_out[e] += actual;
                 }
             }
         }

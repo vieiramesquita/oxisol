@@ -40,9 +40,11 @@ fn synthetic_grid(ncells: usize) -> PreloadedGrid<f32> {
             row: i / 115,
             col: i % 115,
             cell_index: i,
+            transient_cell_id: None,
             biome_id: 3,
             site_input: site_in.clone(),
             mean_weather: weather,
+            transient_weather: None,
         })
         .collect();
 

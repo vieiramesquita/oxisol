@@ -44,46 +44,63 @@ century-rs/
 
 ## Measured Hardware Performance (AMD Ryzen 7 5700X, 8C/16T, WSL2 Debian)
 
-Full continental US VEMAP spinup (**3,168 cells × 1,000 years = 38.0 million cell-months**):
+Full continental US VEMAP spinup (**3,168 cells × 1,000 years = 38.0 million cell-months**) and 99-year historical transient run (**1895–1993** from lossless checkpoint with `pptT3.nc`/`tnT3.nc`/`txT3.nc` + `co2.dat`):
 
-| Engine / Mode | Precision | Threads | Wall Time (3,168×1000 yr) | Throughput | Speedup vs Legacy |
+| Engine / Mode | Precision | Threads | Wall Time | Throughput | Speedup vs Legacy |
 |---|---:|---:|---:|---:|---:|
 | Legacy Fortran/C (`gfortran -O2`) | `f32` | 1 | 154.5 s (extrapolated from 181 cells in 8.83 s) | 20,500 cell-yr/s | 1.00× |
-| `century-rs` Serial (`run_grid_serial`) | `f32` | 1 | ~213.8 s (128 cells in 8.64 s) | 14,818 cell-yr/s | 0.72× |
-| `century-rs` Parallel (`rayon`, biome-grouped) | `f32` | 16 | **26.69 s** | **118,691 cell-yr/s** (1.42M cell-mo/s) | **5.79×** |
-| `century-rs` Parallel (`rayon`, `ScientificClean`) | `f64` | 16 | **27.01 s** | **117,301 cell-yr/s** (1.41M cell-mo/s) | **5.72×** |
-| `century-grid` SIMD `f32x8` SOM kernel | `f32` | 1 | — | **8.01M cell-yr/s** (96.1M cell-mo/s) | — |
+| `century-rs` Serial (`run_grid_serial`) | `f32` | 1 | ~214.1 s (128 cells in 8.65 s) | 14,794 cell-yr/s | 0.72× |
+| `century-rs` Parallel (`rayon`, `VemapV45Parity`) | `f32` | 16 | **26.66 s** (3,168×1,000 yr) | **118,822 cell-yr/s** (1.43M cell-mo/s) | **5.80×** |
+| `century-rs` Parallel (`rayon`, `ScientificClean`) | `f64` | 16 | **25.84 s** (3,168×1,000 yr) | **122,582 cell-yr/s** (1.47M cell-mo/s) | **5.98×** |
+| `century-rs` Transient (`1895–1993`, `ScientificClean`) | `f64` | 16 | **2.58 s** (3,168×99 yr) | **121,796 cell-yr/s** (1.46M cell-mo/s) | — |
+| `century-grid` SIMD `f32x8` SOM kernel | `f32` | 1 | — | **8.36M cell-yr/s** (100.3M cell-mo/s) | — |
 
 ### Scaling to AMD EPYC + 512 GB RAM Servers
-- On the 8-physical-core Ryzen 7 5700X, `century-grid` achieves **7.90×** parallel scaling (**98.8% physical-core efficiency**) with zero locks and zero per-month heap allocations.
+- On the 8-physical-core Ryzen 7 5700X, `century-grid` achieves **7.94×** parallel scaling (**99.3% physical-core efficiency**) with zero locks and zero per-month heap allocations.
 - Because `CellState<f64>` fits in L1d and all grid inputs are preloaded once in read-only memory (`Arc<RawBiomeParams>`), a 128-core / 256-thread AMD EPYC server with 512 GB RAM can hold continental/global 1 km grids (>1M cells) entirely in RAM and sustain near-linear scaling via `--threads <N> --chunk-size 32`.
 
 ---
 
 ## Validation Summary
 
-1. **Mass Conservation Invariants (`cargo test --workspace`):** Verified exact C, N, P, and S conservation to `< 1e-10 g/m²` per monthly step across all subsystems and all management events (`CULT`, `FERT`, `IRRI`, `OMAD`, `EROD`, `GRAZ`, `HARV`, `FIRE`, `TREM`) plus C-14 isotope propagation (`tests/oracle_tier_b.rs`).
+1. **Mass Conservation & Edge-Case Invariants (`cargo test --workspace`):** Verified exact C, N, P, and S conservation to `< 1e-10 g/m²` per monthly step across all subsystems, all management events (`CULT`, `FERT`, `IRRI` modes 0–3, `OMAD`, `EROD`, `GRAZ`, `HARV`, `FIRE`, `TREM`), C-14 isotope propagation, hyper-arid zero-precip deserts, continuous permafrost, extreme 100% sand/clay/90% rock/1-layer soils, and `FlowLedger` >300-flow overflow bursts (`tests/oracle_tier_b.rs`).
 2. **Tier A Continental VEMAP Comparison (3,168 cells × 1,000 years, `VemapV45Parity` vs archived VEMAP `site.nc`):**
-   - Hydraulic pedotransfer (`afiel0`, `awilt0`): exact to single-precision epsilon (`max_rel_err ≤ 2.6e-7` across all 3,168 cells).
-   - Continental US mean stocks closely track archived VEMAP means: `som1c_surf` (35.6 vs 35.2 g C/m²), `som3c` (1,648 vs 1,637 g C/m²), `som2c` (2,705 vs 2,475 g C/m²), `somsc` (4,494 vs 4,232 g C/m²), `rlwodc` (3,563 vs 3,657 g C/m²).
-   - *Note:* Because `century-rs` is a strict clean-room implementation from published documentation (not a line-by-line Fortran port), individual cell-level equilibrium values exhibit expected structural differences from the 1999 CSU binary while preserving continental biogeochemical behavior. See `docs/spec/07_compatibility_profiles.md` for documented V4.0 → V4.5 deltas.
+   - Hydraulic pedotransfer (`afiel0`, `awilt0`): exact to single-precision epsilon (`max_rel_err ≤ 2.62e-7` across all 3,168 cells).
+   - Soil water (`asmos0` median rel diff `12.1%`, zero cells below wilting point), mineral N (`minerl_n0` mean `0.79` vs `0.62 g N/m²`), passive SOM (`som3c` median rel diff `20.0%`), total SOM (`somsc` median rel diff `25.4%`), woody biomass (`rlwodc` `2,912` vs `3,657 g C/m²`), and belowground roots (`bglivc` `172` vs `197 g C/m²`) all track archived continental and biome-level behavior.
+   - `f32` vs `f64` 1,000-year numerical drift (`ScientificClean`): `somsc` median rel drift `2.80e-5` (`P99 = 3.82e-4`), `rlwodc` median rel drift `1.63e-6`.
+   - *Note:* Because `century-rs` is a strict clean-room implementation from published documentation (not a line-by-line Fortran port), individual cell-level equilibrium values exhibit expected structural differences from the 1999 CSU binary while preserving continental and biome biogeochemical behavior. See `docs/spec/07_compatibility_profiles.md` for documented V4.0 → V4.5 deltas.
+3. **Tier B Head-to-Head Perturbation Probes:** Verified 5/5 directional agreement against the local black-box oracle on an isolated VEMAP cell (`CULT P`, `FERT+OMAD`, `IRRI A50`, `FIRE H`, `DRAIN=0.2`).
 
 ---
 
 ## Quick Start
 
 ```bash
-# Build and run all unit, mass-balance, and Tier B coverage tests
+# Build and run all unit, mass-balance, edge-case, and Tier B coverage tests
 cargo test --workspace
 
-# Run a 1,000-year spatial grid simulation (default: ScientificClean f64)
+# Run a 1,000-year spatial grid spinup (default: ScientificClean f64)
 cargo run --release -p century-cli -- run \
   --data-dir /path/to/vemap_data \
   --years 1000 \
   --profile clean \
   --precision f64 \
   --out-nc output_site.nc \
-  --out-checkpoint checkpoint.json
+  --out-checkpoint spinup_checkpoint.json
+
+# Run a 99-year transient simulation (1895-1993) from a spinup checkpoint with NetCDF weather & CO2
+cargo run --release -p century-cli -- run \
+  --data-dir /path/to/vemap_data \
+  --start-year 1895 \
+  --years 99 \
+  --co2-file /path/to/co2.dat \
+  --transient-ppt /path/to/pptT3.nc \
+  --transient-tn /path/to/tnT3.nc \
+  --transient-tx /path/to/txT3.nc \
+  --restart-checkpoint spinup_checkpoint.json \
+  --profile clean \
+  --precision f64 \
+  --out-nc transient_1895_1993.nc
 
 # Validate outputs against a reference NetCDF-3 site.nc
 cargo run --release -p century-cli -- validate \

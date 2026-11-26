@@ -336,8 +336,8 @@ pub struct GridRunResponse {
     pub cell_years_per_sec: f64,
     /// Measured throughput in cell-months per second.
     pub cell_months_per_sec: f64,
-    /// Linearly projected throughput on a 128-core / 256-thread AMD EPYC server.
-    pub epyc_128c_est_cell_yr_s: f64,
+    /// Linearly projected throughput on a modern 128-core / 256-thread high-performance server.
+    pub hpc_256t_est_cell_yr_s: f64,
     /// Mean continental `somsc` across active cells ($\text{g C}\cdot\text{m}^{-2}$).
     pub mean_somsc: f64,
     /// Mean continental annual NPP ($\text{g C}\cdot\text{m}^{-2}\cdot\text{yr}^{-1}$).

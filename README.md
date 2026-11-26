@@ -5,7 +5,7 @@
 [![Safe Rust](https://img.shields.io/badge/unsafe-forbidden-brightgreen.svg)](crates/oxisol-core/src/lib.rs)
 [![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-06b6d4.svg)](https://vieiramesquita.github.io/oxisol/)
 
-**Oxisol** is an **open-source, clean-room, MIT-licensed *CENTURY-like* biogeochemical ecosystem engine** written from scratch in pure, safe Rust (`#![forbid(unsafe_code)]`) and engineered for 2020s multi-core CPUs, **AMD EPYC + 512 GB RAM** servers, and interactive web workflows.
+**Oxisol** is an **open-source, clean-room, MIT-licensed *CENTURY-like* biogeochemical ecosystem engine** written from scratch in pure, safe Rust (`#![forbid(unsafe_code)]`) and engineered for 2020s multi-core CPUs, modern high-performance servers, and interactive web workflows.
 
 > **Why "Oxisol" — and why a CENTURY-like rewrite?**
 > *Oxisols* (Latossolos) are deeply weathered tropical soils rich in iron oxides — literally colored like **rust**. Meanwhile, the canonical 1990s CENTURY Fortran/C distribution remains proprietary (*All Rights Reserved* / non-open-source per the EU JRC MIDAS Policy Model Inventory). **Foundational climate and soil carbon science shouldn't stay locked inside proprietary 1990s Fortran.** Oxisol delivers an independent, clean-room, community-owned CENTURY-like model derived from published peer-reviewed biogeochemical literature — **2.1× faster than `gfortran -O2` on a single core, 14.2× faster on 8C/16T**, with zero C dependencies and a single-binary embedded Web Studio.
@@ -20,11 +20,11 @@
   - **Exact Mass Conservation:** Stack-allocated `FlowLedger<F>` (with automatic overflow spill) and `< 1e-10 g/m²` C/N/P/S conservation auditing in `f64`.
   - **Explicit Profiles:** `CompatibilityProfile::ScientificClean` (`f64`, default) and `CompatibilityProfile::VemapV45Parity` (`f32`, historical VEMAP V4.5 audit mode).
 - **Single-Binary Embedded Web UI & REST API (`oxisol-web` / `oxisol serve`):**
-  - **Oxisol Studio** ships inside the compiled `oxisol` binary with **zero Node.js or CDN runtime dependencies** — run locally or on a headless AMD EPYC server over an SSH tunnel.
-  - Bilingual **EN / PT-BR** interface featuring the **Scenario Lab** (6 calibrated global presets incl. Southern Hemisphere Cerrado, A/B Baseline pinning with live `Δ` badges, interactive SVG charts, live pool flow diagram, CSV/JSON export) and **Spatial Grid & HPC Explorer** (live multi-core `rayon` execution, 2D interactive heatmap canvas, click-to-inspect cells, EPYC throughput projection).
+  - **Oxisol Studio** ships inside the compiled `oxisol` binary with **zero Node.js or CDN runtime dependencies** — run locally or on a headless high-performance server over an SSH tunnel.
+  - Bilingual **EN / PT-BR** interface featuring the **Scenario Lab** (7 calibrated global presets incl. Southern Hemisphere Cerrado, A/B Baseline pinning with live `Δ` badges, interactive SVG charts, live pool flow diagram, CSV/JSON export) and **Spatial Grid & HPC Explorer** (live multi-core `rayon` execution, 2D interactive heatmap canvas, click-to-inspect cells, high-performance server throughput projection).
 - **100% Pure-Rust I/O (`oxisol-io`):**
   - Native parsers for `.100`, `.sch`, `.v2` ASCII rasters, `co2.dat`, pure-Rust NetCDF-3 Classic & 64-bit Offset reader/writer, `site.nc` I/O, and complete lossless JSON checkpoints.
-- **Built for AMD EPYC + 512 GB RAM Servers (`oxisol-grid`):**
+- **Built for Modern High-Performance Servers (`oxisol-grid`):**
   - 64-byte cache-line-aligned `CellState<f64>` (~5.8 KiB, L1d-resident), zero shared mutable state (`Arc<RawBiomeParams>`), lock-free `rayon` chunked parallelism, and portable SIMD (`wide::f32x8` / `f64x4`).
 
 ---
@@ -62,7 +62,7 @@ Full continental US VEMAP spinup (**3,168 cells × 1,000 years = 38.0 million ce
 | `oxisol` Transient (`1895–1993`, 99 yr) | `f64` | 16 | **1.19 s** | **264,148 cell-yr/s** (`3.17M cell-mo/s`) | — |
 | `oxisol-grid` SIMD `f32x8` SOM kernel | `f32` | 1 | — | **7.88M cell-yr/s** (`94.60M cell-mo/s`) | — |
 
-On production **AMD EPYC + 512 GB RAM** servers, compile with `RUSTFLAGS="-C target-cpu=native"` and pass `--threads <N> --chunk-size 32`.
+On modern high-performance multi-core servers, compile with `RUSTFLAGS="-C target-cpu=native"` and pass `--threads <N> --chunk-size 32`.
 
 ---
 
@@ -97,6 +97,13 @@ cargo run --release -p oxisol-cli -- bench --years 1000
 mdbook serve docs --open
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --open
 ```
+
+---
+
+## Authorship
+
+- **Author:** [Vinícius Mesquita](https://github.com/vieiramesquita) (`@vieiramesquita`)
+- **AI Co-Author:** Antigravity (Google DeepMind)
 
 ---
 

@@ -11,7 +11,7 @@ use oxisol_io::checkpoint::NativeCellCheckpoint;
 use oxisol_io::vemap::{PreloadedCell, PreloadedGrid};
 use rayon::prelude::*;
 
-/// Execution configuration for parallel multi-core grid runs (Ryzen -> EPYC 256T).
+/// Execution configuration for parallel multi-core grid runs (Desktop -> 256T+ HPC servers).
 #[derive(Debug, Clone)]
 pub struct GridRunConfig {
     /// Core biogeochemical simulation configuration.
@@ -161,7 +161,7 @@ pub fn run_grid_serial<F: Float>(
 /// zero shared mutable state, and deterministic output order (`0..ncells`).
 ///
 /// Designed for linear scaling across both 16-thread desktop CPUs and
-/// 128–256-thread dual-socket AMD EPYC + 512 GB RAM servers.
+/// 128–256-thread dual-socket modern high-performance servers.
 pub fn run_grid_parallel<F: Float>(
     grid: &PreloadedGrid<F>,
     cfg: &GridRunConfig,

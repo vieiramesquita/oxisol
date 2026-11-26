@@ -49,7 +49,7 @@ curl -s http://127.0.0.1:8080/api/simulate \
 ```
 
 ### `POST /api/grid/run`
-Executes a multi-core parallel spatial grid run via `oxisol-grid` (`rayon`), returning throughput telemetry, EPYC scaling projection, and per-cell biogeochemical states.
+Executes a multi-core parallel spatial grid run via `oxisol-grid` (`rayon`), returning throughput telemetry, high-performance server scaling projection, and per-cell biogeochemical states.
 
 ```bash
 curl -s http://127.0.0.1:8080/api/grid/run \

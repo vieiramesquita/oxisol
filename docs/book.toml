@@ -1,6 +1,6 @@
 [book]
 title = "Oxisol Documentation"
-authors = ["Oxisol Contributors"]
+authors = ["Vinícius Mesquita", "Antigravity (AI Co-Author)"]
 description = "Open-source, clean-room CENTURY-like biogeochemical ecosystem engine in Rust — User Guide, Scientific Reference, REST API, and HPC Architecture."
 language = "en"
 src = "src"

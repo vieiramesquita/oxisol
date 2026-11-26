@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "High-throughput multi-core (rayon) and portable SIMD (wide AVX2/AVX-512) spatial grid runner for oxisol, engineered for desktop Ryzen through 256-thread AMD EPYC + 512 GB RAM servers."
+description = "High-throughput multi-core (rayon) and portable SIMD (wide AVX2/AVX-512) spatial grid runner for oxisol, engineered for desktop Ryzen through 256-thread modern high-performance servers."
 
 [dependencies]
 oxisol-core.workspace = true

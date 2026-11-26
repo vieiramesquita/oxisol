@@ -25,9 +25,9 @@ target/release/oxisol        # Linux / WSL2 / macOS
 target/release/oxisol.exe    # Windows
 ```
 
-## Optimized Server Build (AMD EPYC + 512 GB RAM / HPC)
+## Optimized Server Build (modern high-performance multi-core servers / HPC)
 
-When deploying Oxisol on high-core-count **AMD EPYC** (Zen 3 / Zen 4 / Zen 5) or Intel Xeon servers, enable native CPU instruction set targeting (`AVX2+FMA3` or `AVX-512`) during compilation:
+When deploying Oxisol on modern high-core-count servers (x86_64 AVX2/AVX-512 or ARM64 NEON), enable native CPU instruction set targeting (`AVX2+FMA3` or `AVX-512`) during compilation:
 
 ```bash
 RUSTFLAGS="-C target-cpu=native" cargo build --release -p oxisol-cli
@@ -38,8 +38,8 @@ RUSTFLAGS="-C target-cpu=native" cargo build --release -p oxisol-cli
 | Server Class | Recommended Flags | Expected Behavior |
 |---|---|---|
 | Desktop 8C / 16T (Ryzen 7) | `--threads 16 --chunk-size 16` | ~290k cell-yr/s (`3.48M cell-mo/s`) |
-| Single-Socket EPYC 64C / 128T | `--threads 128 --chunk-size 32` | Near-linear scaling; zero lock contention |
-| Dual-Socket EPYC 128C / 256T (512 GB RAM) | `numactl --interleave=all oxisol run --threads 256 --chunk-size 32 ...` | Entire 1 km² continental rasters held read-only in RAM; `CellState<f64>` (~5.8 KiB) stays resident in per-core 32 KiB L1d cache |
+| High-Core Server (64C / 128T) | `--threads 128 --chunk-size 32` | Near-linear scaling; zero lock contention |
+| Multi-Socket HPC Server (128C / 256T+) | `numactl --interleave=all oxisol run --threads 256 --chunk-size 32 ...` | Entire 1 km² continental rasters held read-only in RAM; `CellState<f64>` (~5.8 KiB) stays resident in per-core 32 KiB L1d cache |
 
 > **Tip for WSL2 Users:** For heavy I/O workloads (thousands of files or large NetCDF rasters), store input/output datasets inside the native Linux filesystem (`~/...`) rather than `/mnt/c` or `/mnt/e` to avoid Windows–WSL 9P filesystem overhead.
 

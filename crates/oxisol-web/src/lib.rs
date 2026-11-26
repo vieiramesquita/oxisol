@@ -2,7 +2,7 @@
 //!
 //! Single-binary embedded web studio powered by [`axum`] and [`tokio`], designed
 //! to run identically on a local workstation or a remote high-core-count
-//! **AMD EPYC + 512 GB RAM** server over SSH port-forwarding with **zero
+//! modern high-performance server over SSH port-forwarding with **zero
 //! external Node.js/CDN runtime dependencies**.
 //!
 //! ## Endpoints

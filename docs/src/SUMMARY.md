@@ -23,6 +23,6 @@
 
 # Architecture & Integration
 
-- [Rust Engine & AMD EPYC Scaling](architecture/rust-and-epyc-scaling.md)
+- [Rust Engine & HPC Server Scaling](architecture/hpc-scaling.md)
 - [REST JSON API Reference](architecture/rest-api.md)
 - [Formal Clean-Room Specification Appendix](architecture/spec-appendix.md)

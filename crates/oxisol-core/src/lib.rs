@@ -15,7 +15,7 @@
 //!   [`CellState`] (~3 KiB in `f32`, ~5.8 KiB in `f64`, fitting inside 32 KiB L1d)
 //!   and per-cell [`CellDerivedParams`], while biome tables live in immutable
 //!   `Arc<RawBiomeParams>` for contention-free scaling from desktop Ryzen CPUs
-//!   to high-core-count AMD EPYC servers (128–256+ threads, 512 GB+ RAM).
+//!   to high-core-count modern high-performance servers (128–256+ threads).
 //! - **Exact mass conservation**: all pool transfers flow through a stack-allocated
 //!   [`FlowLedger`] with strongly-typed [`PoolId`]s and optional per-step
 //!   conservation auditing.

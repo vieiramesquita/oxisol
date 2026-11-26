@@ -3,7 +3,7 @@
 //! Preloads all biome `.100`/`.sch` tables, soil `.v2` rasters, `geog.nc`, and
 //! `phase1.ncdf` monthly climate ONCE into memory so `oxisol-grid` executes with
 //! ZERO filesystem I/O inside the parallel worker loop (scaling cleanly from
-//! 16-thread Ryzen 7 5700X to 256-thread AMD EPYC + 512 GB RAM servers).
+//! 16-thread Ryzen 7 5700X to 256-thread modern high-performance servers).
 
 use std::collections::HashMap;
 use std::path::Path;

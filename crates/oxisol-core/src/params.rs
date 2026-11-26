@@ -901,7 +901,7 @@ pub struct TremParams<F: Float> {
 }
 
 /// Complete immutable biome parameter bundle, designed to be wrapped in `Arc`
-/// and shared with zero contention across all CPU threads (including 256-thread EPYC).
+/// and shared with zero contention across all CPU threads (including 256+ thread servers).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RawBiomeParams<F: Float> {
     /// Biome/landuse numeric ID.

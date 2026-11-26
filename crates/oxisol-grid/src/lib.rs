@@ -2,7 +2,7 @@
 //!
 //! Spatial grid execution engine for `Oxisol`, engineered for linear multi-core
 //! scalability from desktop test hardware (AMD Ryzen 7 5700X, 8C/16T) to production
-//! high-core-count **AMD EPYC + 512 GB RAM** servers (64–256+ threads):
+//! high-core-count modern high-performance servers (64–256+ threads):
 //!
 //! - **Tier 1 (`runner`)**: Zero-I/O in-memory preload, immutable `Arc<RawBiomeParams>`,
 //!   lock-free `rayon` work-stealing over cache-aligned chunks, zero false sharing,

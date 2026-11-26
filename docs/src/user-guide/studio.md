@@ -1,6 +1,6 @@
 # Oxisol Studio (Web Interface)
 
-**Oxisol Studio** is an interactive web workbench embedded directly inside the compiled `oxisol` binary (`crates/oxisol-web`). It requires **zero Node.js, npm, or external CDN access**, making it equally suitable for air-gapped HPC clusters, AMD EPYC research servers, and local laptops.
+**Oxisol Studio** is an interactive web workbench embedded directly inside the compiled `oxisol` binary (`crates/oxisol-web`). It requires **zero Node.js, npm, or external CDN access**, making it equally suitable for air-gapped HPC clusters, modern high-performance research servers, and local laptops.
 
 ## Launching Studio
 
@@ -8,16 +8,16 @@
 oxisol serve --host 127.0.0.1 --port 8080
 ```
 
-### Remote Access on an AMD EPYC Server (Recommended Pattern)
+### Remote Access on a High-Performance Server (Recommended Pattern)
 
 Bind to loopback (`127.0.0.1`) on the remote server and forward the port over SSH — keeping the server completely protected without opening firewall ports:
 
 ```bash
-# On the EPYC server:
+# On the remote server:
 oxisol serve --host 127.0.0.1 --port 8080 --data-dir /data/continental_grid
 
 # On your local workstation:
-ssh -L 8080:127.0.0.1:8080 user@epyc-server
+ssh -L 8080:127.0.0.1:8080 user@hpc-server
 # Then open http://127.0.0.1:8080 locally
 ```
 
@@ -52,7 +52,7 @@ Test and visualize lock-free `rayon` multi-core execution directly in your brows
 
 - Runs either an **attached VEMAP/spatial dataset** (`--data-dir`) or the **built-in synthetic continental gradient grid** (`rows × cols` spanning boreal → subtropical and arid → humid zones).
 - Adjust **Worker Threads**, **Chunk Size**, **Years / Cell**, **Float Precision (`f64`/`f32`)**, and **Profile** live.
-- Inspect real-time **Measured Throughput (`cell-yr/s`, `cell-mo/s`)** and a conservative **AMD EPYC 128C / 256T projection**.
+- Inspect real-time **Measured Throughput (`cell-yr/s`, `cell-mo/s`)** and a conservative **256-thread high-performance server projection**.
 - Switch heatmap layers (`SOMSC`, `SOM3 Passive`, `Large Wood`, `Annual NPP`, `Annual AET`, `Soil Water`, `Mineral N`, `Biome ID`) and **click any cell** to inspect its full state in the Cell Inspector panel.
 
 ### 3. REST API & Docs

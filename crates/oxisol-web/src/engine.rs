@@ -348,9 +348,9 @@ fn execute_grid_run_typed<F: Float>(
         .collect();
 
     let n = cells.len().max(1) as f64;
-    // Conservative 85% scaling projection from current logical threads to 256T AMD EPYC
+    // Conservative 85% scaling projection from current logical threads to 256-thread high-performance server
     let per_thread_rate = stats.cell_years_per_sec / (threads_used.max(1) as f64);
-    let epyc_est = per_thread_rate * 256.0 * 0.85;
+    let hpc_est = per_thread_rate * 256.0 * 0.85;
 
     Ok(GridRunResponse {
         source_label,
@@ -362,7 +362,7 @@ fn execute_grid_run_typed<F: Float>(
         elapsed_secs: stats.elapsed_secs,
         cell_years_per_sec: stats.cell_years_per_sec,
         cell_months_per_sec: stats.cell_months_per_sec,
-        epyc_128c_est_cell_yr_s: epyc_est,
+        hpc_256t_est_cell_yr_s: hpc_est,
         mean_somsc: sum_somsc / n,
         mean_npp: sum_npp / n,
         cells,

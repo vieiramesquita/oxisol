@@ -72,11 +72,11 @@ const I18N = {
     gkpi_cells: "Active Cells × Years",
     gkpi_time: "Wall Time",
     gkpi_rate: "Measured Throughput",
-    gkpi_epyc: "AMD EPYC 128C Est.",
+    gkpi_hpc: "HPC 256T Server Est.",
     gkpi_mean_som: "Mean Continental SOMSC",
     map_title: "Interactive 2D Spatial Heatmap",
     api_overview_title: "Oxisol HTTP/JSON API",
-    api_overview_desc: "Oxisol Studio embeds an Axum REST API inside the single compiled Rust binary. Automate scenarios from Python, R, Julia, or GIS pipelines on local machines or remote AMD EPYC servers over SSH tunnels.",
+    api_overview_desc: "Oxisol Studio embeds an Axum REST API inside the single compiled Rust binary. Automate scenarios from Python, R, Julia, or GIS pipelines on local machines or remote high-performance servers over SSH tunnels.",
     ep_health: "Liveness & version check",
     ep_sys: "Host CPU count, CellState L1d bytes & attached grid",
     ep_presets: "7 calibrated ecosystem presets (EN/PT-BR)",
@@ -84,7 +84,7 @@ const I18N = {
     ep_grid: "Lock-free multi-core spatial grid execution",
     api_example_title: "Quick Python Example",
     sys_card_title: "Architecture & Documentation",
-    hpc_title: "Running Remotely on AMD EPYC + 512 GB RAM",
+    hpc_title: "Running Remotely on Modern High-Performance Servers",
     docs_pointer: "Full scientific documentation (mdBook) lives in docs/src/ and API reference builds via cargo doc --workspace --no-deps. Released under the MIT License."
   },
   pt: {
@@ -158,11 +158,11 @@ const I18N = {
     gkpi_cells: "Células Ativas × Anos",
     gkpi_time: "Tempo de Parede",
     gkpi_rate: "Throughput Medido",
-    gkpi_epyc: "Estimativa AMD EPYC 128C",
+    gkpi_hpc: "Estimativa Servidor HPC 256T",
     gkpi_mean_som: "SOMSC Médio Continental",
     map_title: "Mapa de Calor Espacial 2D Interativo",
     api_overview_title: "API HTTP/JSON do Oxisol",
-    api_overview_desc: "O Oxisol Studio embute uma API REST Axum dentro do binário único em Rust. Automatize cenários via Python, R, Julia ou pipelines GIS localmente ou em servidores AMD EPYC via túnel SSH.",
+    api_overview_desc: "O Oxisol Studio embute uma API REST Axum dentro do binário único em Rust. Automatize cenários via Python, R, Julia ou pipelines GIS localmente ou em servidores modernos de alto desempenho via túnel SSH.",
     ep_health: "Checagem de saúde e versão",
     ep_sys: "CPUs do host, tamanho L1d do CellState e grade anexada",
     ep_presets: "7 presets calibrados de ecossistemas (EN/PT-BR)",
@@ -170,7 +170,7 @@ const I18N = {
     ep_grid: "Execução espacial multi-core lock-free via rayon",
     api_example_title: "Exemplo Rápido em Python",
     sys_card_title: "Arquitetura & Documentação",
-    hpc_title: "Execução Remota em AMD EPYC + 512 GB RAM",
+    hpc_title: "Execução Remota em Servidores Modernos de Alto Desempenho",
     docs_pointer: "A documentação científica completa (mdBook) está em docs/src/ e a referência de API é gerada via cargo doc --workspace --no-deps. Licença MIT."
   }
 };
@@ -673,7 +673,7 @@ async function runSpatialGrid() {
     $("gkpi-threads").textContent = `${data.threads_used} threads`;
     $("gkpi-rate").textContent = `${fmt(data.cell_years_per_sec, 0)}`;
     $("gkpi-mo-rate").textContent = `${fmt(data.cell_months_per_sec / 1e6, 2)}M cell-mo/s`;
-    $("gkpi-epyc").textContent = `${fmt(data.epyc_128c_est_cell_yr_s / 1e6, 2)}M`;
+    $("gkpi-hpc").textContent = `${fmt(data.hpc_256t_est_cell_yr_s / 1e6, 2)}M`;
     $("gkpi-som").textContent = `${fmt(data.mean_somsc, 0)} g C/m²`;
     $("gkpi-npp").textContent = `NPP: ${fmt(data.mean_npp, 1)} g C/m²/yr`;
 

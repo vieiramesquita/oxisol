@@ -1,6 +1,6 @@
 //! Tier-2 performance layer: biome-grouped Struct-of-Arrays (SoA) batching and
 //! portable safe SIMD (`wide::f32x8` / `wide::f64x4`) kernels targeting AVX2+FMA3
-//! on Ryzen Zen 3 and AVX2/AVX-512 on AMD EPYC servers.
+//! on Ryzen Zen 3 and AVX2/AVX-512 on modern high-performance servers.
 
 use std::collections::BTreeMap;
 
@@ -57,7 +57,7 @@ fn atan_approx_f32x8(x: f32x8) -> f32x8 {
 }
 
 /// Evaluate abiotic decomposition factor `defac = f_T(stemp) * f_W(rel_water)` across
-/// 8 cells simultaneously using `wide::f32x8` (compiles to AVX2+FMA3 on Zen 3 / EPYC)
+/// 8 cells simultaneously using `wide::f32x8` (compiles to AVX2+FMA3 on modern x86_64 CPUs)
 /// using the published Parton et al. (1994) arctangent temperature curve (`IDEF = 2`).
 #[inline]
 pub fn batch_defac_f32x8(stemp: f32x8, rel_water: f32x8, _teff: [f32; 3]) -> f32x8 {

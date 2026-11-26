@@ -1,7 +1,7 @@
 //! Pure-Rust NetCDF-3 Classic (`CDF\x01`) and 64-bit Offset (`CDF\x02`) reader & writer.
 //!
 //! Zero C dependencies (`libnetcdf.so` not required), enabling portable native execution
-//! across Linux (AMD EPYC servers), WSL2, Windows, and macOS.
+//! across Linux (modern high-performance servers), WSL2, Windows, and macOS.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -86,7 +86,7 @@ pub struct NcFile {
     pub rec_size: usize,
     /// Variable lookup table.
     pub vars: HashMap<String, NcVar>,
-    /// Raw file bytes (fast zero-copy decoding for datasets up to multi-GB on EPYC/512GB RAM).
+    /// Raw file bytes (fast zero-copy decoding for datasets up to multi-GB on high-memory servers).
     bytes: Vec<u8>,
 }
 

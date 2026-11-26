@@ -90,7 +90,7 @@ struct RunArgs {
     /// Floating-point precision (`f64` recommended for clean science, `f32` for parity).
     #[arg(long, value_enum, default_value_t = PrecisionArg::F64)]
     precision: PrecisionArg,
-    /// Number of worker threads (defaults to all logical cores; tune for EPYC NUMA).
+    /// Number of worker threads (defaults to all logical cores; tune for server NUMA topology).
     #[arg(long)]
     threads: Option<usize>,
     /// Cells per parallel chunk (default 16).

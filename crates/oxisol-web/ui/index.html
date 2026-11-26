@@ -342,8 +342,8 @@
               <div class="kpi-sub" id="gkpi-mo-rate">cell-mo/s</div>
             </div>
             <div class="kpi-card">
-              <div class="kpi-label" data-i18n="gkpi_epyc">AMD EPYC 128C Est.</div>
-              <div class="kpi-val" id="gkpi-epyc">—</div>
+              <div class="kpi-label" data-i18n="gkpi_hpc">HPC 256T Server Est.</div>
+              <div class="kpi-val" id="gkpi-hpc">—</div>
               <div class="kpi-sub">cell-yr/s (256T)</div>
             </div>
             <div class="kpi-card">
@@ -389,7 +389,7 @@
         <div class="card doc-card">
           <h3 data-i18n="api_overview_title">Oxisol HTTP/JSON API</h3>
           <p class="muted-note" data-i18n="api_overview_desc">
-            Oxisol Studio embeds an Axum REST API inside the single compiled Rust binary. Automate scenarios from Python, R, Julia, or GIS pipelines on local machines or remote AMD EPYC servers over SSH tunnels.
+            Oxisol Studio embeds an Axum REST API inside the single compiled Rust binary. Automate scenarios from Python, R, Julia, or GIS pipelines on local machines or remote high-performance servers over SSH tunnels.
           </p>
           <div class="endpoint-list">
             <div class="ep-item"><span class="method get">GET</span><code>/api/health</code><span data-i18n="ep_health">Liveness &amp; version check</span></div>
@@ -413,15 +413,15 @@ print("Mass Balance Err:", res["final_pools"]["max_mass_balance_err"])</code></p
         <div class="card doc-card">
           <h3 data-i18n="sys_card_title">Architecture &amp; Documentation</h3>
           <div id="sys-meta" class="inspector-table"></div>
-          <h4 style="margin-top:1.25rem;" data-i18n="hpc_title">Running Remotely on AMD EPYC + 512 GB RAM</h4>
-          <pre class="code-box"><code># Compile natively for Zen 4 / Zen 5 AVX-512 on EPYC
+          <h4 style="margin-top:1.25rem;" data-i18n="hpc_title">Running Remotely on Modern High-Performance Servers</h4>
+          <pre class="code-box"><code># Compile natively with host SIMD (AVX2 / AVX-512 / NEON)
 RUSTFLAGS="-C target-cpu=native" cargo build --release -p oxisol-cli
 
-# Launch headless Studio on EPYC with your spatial grid mounted
+# Launch headless Studio on your server with a spatial grid mounted
 ./target/release/oxisol serve --host 127.0.0.1 --port 8080 --data-dir /data/grid
 
 # Access securely from your laptop via SSH tunnel
-ssh -L 8080:127.0.0.1:8080 user@epyc-server</code></pre>
+ssh -L 8080:127.0.0.1:8080 user@hpc-server</code></pre>
           <p class="muted-note" style="margin-top:0.85rem;" data-i18n="docs_pointer">
             Full scientific documentation (mdBook) lives in <code>docs/src/</code> and API reference builds via <code>cargo doc --workspace --no-deps</code>. Released under the MIT License.
           </p>

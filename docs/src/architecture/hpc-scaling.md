@@ -1,4 +1,4 @@
-# Rust Engine & AMD EPYC Scaling Architecture
+# Rust Engine & High-Performance Server Scaling
 
 Oxisol is organized as a five-crate Cargo workspace with **`#![forbid(unsafe_code)]`** enforced across every crate:
 
@@ -24,10 +24,10 @@ oxisol/
 3. **O(1) Compiled Schedules & Const-Specialized `NELEM` Hot Loops:**
    - `.sch` blocks are pre-compiled once into `CompiledSchedule` indexed directly by `(rel_year, month)`.
    - Decomposition substeps dispatch through const-generic `NELEM ∈ {1, 2, 3}` direct mass-conserving transfers — pushing **single-thread Rust (`43.2k cell-yr/s`) to 2.11× faster than legacy `gfortran -O2` (`20.5k cell-yr/s`)**.
-4. **Zero-I/O Worker Loop & Large-RAM Server Readiness (EPYC + 512 GB RAM):**
+4. **Zero-I/O Worker Loop & Large-RAM Server Readiness (High-Memory Multi-Core Servers):**
    - All climate, soil, geography, and biome tables are preloaded once into read-only memory before `rayon` dispatches biome-grouped chunks.
    - Output vectors are assembled in deterministic cell order (`0..ncells`) independent of thread scheduling.
-   - On a 128-core / 256-thread **AMD EPYC + 512 GB RAM** server, multi-million-cell 1 km² continental grids fit cleanly in memory and scale nearly linearly when built with `RUSTFLAGS="-C target-cpu=native"`.
+   - On a 128-core / 256-thread high-performance server, multi-million-cell 1 km² continental grids fit cleanly in memory and scale nearly linearly when built with `RUSTFLAGS="-C target-cpu=native"`.
 
 ## Measured Throughput Benchmarks (Test Machine: Ryzen 7 5700X, 8C/16T)
 

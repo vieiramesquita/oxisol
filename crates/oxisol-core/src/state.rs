@@ -2,7 +2,7 @@
 //!
 //! `CellState<f32>` is ~3 KiB and `CellState<f64>` is ~5.8 KiB — fitting cleanly
 //! inside the 32 KiB L1d cache per core on both AMD Ryzen 7 5700X (Zen 3) and
-//! AMD EPYC server processors (Zen 3/4/5) with zero false sharing across threads.
+//! modern multi-core server processors with zero false sharing across threads.
 
 use serde::{Deserialize, Serialize};
 

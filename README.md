@@ -24,7 +24,7 @@
   - Bilingual **EN / PT-BR** interface featuring the **Scenario Lab** (7 calibrated global presets incl. Southern Hemisphere Cerrado, A/B Baseline pinning with live `Δ` badges, interactive SVG charts, live pool flow diagram, CSV/JSON export) and **Spatial Grid & HPC Explorer** (live multi-core `rayon` execution, 2D interactive heatmap canvas, click-to-inspect cells, high-performance server throughput projection).
 - **100% Pure-Rust I/O (`oxisol-io`):**
   - Native parsers for `.100`, `.sch`, `.v2` ASCII rasters, `co2.dat`, pure-Rust NetCDF-3 Classic & 64-bit Offset reader/writer, `site.nc` I/O, and complete lossless JSON checkpoints.
-- **Built for Modern High-Performance Servers (`oxisol-grid`):**
+- **Built for POWERFUL Servers (`oxisol-grid`):**
   - 64-byte cache-line-aligned `CellState<f64>` (~5.8 KiB, L1d-resident), zero shared mutable state (`Arc<RawBiomeParams>`), lock-free `rayon` chunked parallelism, and portable SIMD (`wide::f32x8` / `f64x4`).
 
 ---
@@ -62,7 +62,7 @@ Full continental US VEMAP spinup (**3,168 cells × 1,000 years = 38.0 million ce
 | `oxisol` Transient (`1895–1993`, 99 yr) | `f64` | 16 | **1.19 s** | **264,148 cell-yr/s** (`3.17M cell-mo/s`) | — |
 | `oxisol-grid` SIMD `f32x8` SOM kernel | `f32` | 1 | — | **7.88M cell-yr/s** (`94.60M cell-mo/s`) | — |
 
-On modern high-performance multi-core servers, compile with `RUSTFLAGS="-C target-cpu=native"` and pass `--threads <N> --chunk-size 32`.
+On production servers, compile with `RUSTFLAGS="-C target-cpu=native"` and pass `--threads <N> --chunk-size 32`.
 
 ---
 

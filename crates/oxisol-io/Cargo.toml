@@ -5,10 +5,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Pure-Rust parsers and NetCDF-3/ASCII/checkpoint I/O for oxisol (zero C dependencies)."
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Pure-Rust parsers, GeoTIFF/COG (terrio), NetCDF-3, ASCII, and checkpoint I/O for oxisol (zero C dependencies)."
 
 [dependencies]
 oxisol-core.workspace = true
+terrio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

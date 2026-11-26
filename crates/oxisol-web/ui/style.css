@@ -115,6 +115,24 @@ input[type="range"] { width: 100%; accent-color: var(--emerald); cursor: pointer
   font-size: 12.5px; font-family: inherit;
 }
 .input-num { font-family: var(--mono); }
+.input-textarea {
+  width: 100%; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px;
+  font-size: 12px; font-family: var(--mono); resize: vertical;
+}
+.check-row {
+  display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted);
+  margin-top: 4px; cursor: pointer;
+}
+.lulc-legend { display: flex; flex-direction: column; gap: 5px; }
+.lulc-leg-row {
+  display: flex; align-items: center; justify-content: space-between; font-size: 12px;
+  padding: 3px 6px; border-radius: 6px; background: var(--surface-2);
+}
+.lulc-leg-left { display: flex; align-items: center; gap: 7px; }
+.lulc-swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.2); flex-shrink: 0; }
+.lulc-code { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+#lulc-canvas { width: 100%; max-height: 540px; image-rendering: pixelated; cursor: crosshair; }
 .input-select.compact { width: auto; padding: 5px 10px; }
 .ctrl-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.65rem; }
 .ctrl-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; }

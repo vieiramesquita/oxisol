@@ -165,6 +165,55 @@ enum Commands {
         #[arg(long)]
         zminrl: Option<PathBuf>,
     },
+
+    /// Run a georeferenced LULC + modeled climate GeoTIFF/COG simulation (powered by `terrio`).
+    Raster {
+        /// One or more LULC GeoTIFF/COG paths (repeat `--lulc` for annual land-use change).
+        #[arg(long)]
+        lulc: Vec<String>,
+        /// Classification scheme (`mapbiomas_br` or `esa_worldcover`).
+        #[arg(long, default_value = "mapbiomas_br")]
+        scheme: String,
+        /// Multi-band monthly precipitation GeoTIFF/NetCDF (`12` or `12*N` bands).
+        #[arg(long)]
+        precip: Option<String>,
+        /// Multi-band monthly minimum temperature GeoTIFF/NetCDF.
+        #[arg(long)]
+        tmin: Option<String>,
+        /// Multi-band monthly maximum temperature GeoTIFF/NetCDF.
+        #[arg(long)]
+        tmax: Option<String>,
+        /// Optional SoilGrids/soil sand GeoTIFF.
+        #[arg(long)]
+        sand: Option<String>,
+        /// Optional soil clay GeoTIFF.
+        #[arg(long)]
+        clay: Option<String>,
+        /// Optional soil bulk density GeoTIFF.
+        #[arg(long)]
+        bulkd: Option<String>,
+        /// Optional soil pH GeoTIFF.
+        #[arg(long)]
+        ph: Option<String>,
+        /// Spinup years on initial LULC class (default 80).
+        #[arg(long, default_value_t = 80)]
+        spinup_years: i32,
+        /// Transient simulation years (ignored if multiple `--lulc` rasters are supplied).
+        #[arg(long, default_value_t = 35)]
+        years: i32,
+        /// Starting atmospheric CO2 (ppm).
+        #[arg(long, default_value_t = 354.0)]
+        co2_start: f64,
+        /// Ending atmospheric CO2 (ppm).
+        #[arg(long, default_value_t = 422.0)]
+        co2_end: f64,
+        /// Number of worker threads (defaults to all logical cores).
+        #[arg(long)]
+        threads: Option<usize>,
+        /// Output directory where DEFLATE-compressed Cloud-Optimized GeoTIFFs (`.tif`) are written.
+        #[arg(long)]
+        out_dir: String,
+    },
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -632,6 +681,76 @@ fn main() -> ExitCode {
                     .map(|()| true)
                     .map_err(|e| -> Box<dyn std::error::Error> { e }),
                 Err(e) => Err(Box::new(e)),
+            }
+        }
+        Commands::Raster {
+            lulc,
+            scheme,
+            precip,
+            tmin,
+            tmax,
+            sand,
+            clay,
+            bulkd,
+            ph,
+            spinup_years,
+            years,
+            co2_start,
+            co2_end,
+            threads,
+            out_dir,
+        } => {
+            let mode = if lulc.is_empty() {
+                "demo".to_string()
+            } else {
+                "geotiff".to_string()
+            };
+            let req = oxisol_web::lulc::LulcRunRequest {
+                mode,
+                scheme_id: scheme,
+                class_mappings: vec![],
+                lulc_paths: lulc,
+                precip_path: precip,
+                tmin_path: tmin,
+                tmax_path: tmax,
+                precip_unit: oxisol_web::lulc::PrecipUnit::Mm,
+                temp_unit: oxisol_web::lulc::TempUnit::Celsius,
+                sand_path: sand,
+                clay_path: clay,
+                bulkd_path: bulkd,
+                ph_path: ph,
+                rock_path: None,
+                soilgrids_units: true,
+                spinup_years,
+                transient_years: years,
+                co2_start_ppm: co2_start,
+                co2_end_ppm: co2_end,
+                temp_delta_c: 0.0,
+                precip_scale: 1.0,
+                cropland_tillage: oxisol_web::models::TillageMode::NoTillHarvest,
+                threads,
+                export_cog_dir: Some(out_dir),
+            };
+            match oxisol_web::lulc::execute_lulc_run(&req) {
+                Ok(res) => {
+                    println!(
+                        "Completed {} ({} active pixels, {} converted) in {:.2}s ({:.0} pixel-yr/s)",
+                        res.source_label,
+                        res.n_active,
+                        res.n_converted,
+                        res.elapsed_secs,
+                        res.pixel_years_per_sec
+                    );
+                    println!(
+                        "Mean final SOMSC = {:.1} g C/m2 | Mean delta SOMSC = {:+.1} g C/m2 ({:+.2} t C/ha)",
+                        res.mean_somsc, res.mean_delta_somsc, res.mean_delta_t_c_ha
+                    );
+                    for p in &res.exported_cogs {
+                        println!("  Wrote COG: {p}");
+                    }
+                    Ok(true)
+                }
+                Err(e) => Err(e.into()),
             }
         }
     };

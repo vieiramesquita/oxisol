@@ -19,6 +19,7 @@
     <nav class="nav-tabs" role="tablist">
       <button class="nav-tab active" data-tab="lab" data-i18n="tab_lab">Scenario Lab</button>
       <button class="nav-tab" data-tab="grid" data-i18n="tab_grid">Spatial Grid &amp; HPC</button>
+      <button class="nav-tab" data-tab="lulc" data-i18n="tab_lulc">LULC &amp; Raster (GeoTIFF)</button>
       <button class="nav-tab" data-tab="api" data-i18n="tab_api">REST API &amp; Docs</button>
     </nav>
 
@@ -383,7 +384,201 @@
       </div>
     </section>
 
-    <!-- ==================== TAB 3: REST API & DOCS ==================== -->
+    <!-- ==================== TAB 3: LULC & RASTER (GEOTIFF / TERRIO) ==================== -->
+    <section id="panel-lulc" class="panel">
+      <div class="grid-layout">
+        <aside class="sidebar">
+          <div class="card control-card">
+            <h3 data-i18n="lulc_src_title">LULC &amp; Modeled Climate Source</h3>
+            <div class="ctrl-row">
+              <label class="small-lbl" data-i18n="lulc_mode">Execution Mode</label>
+              <select id="lulc-mode" class="input-select">
+                <option value="demo" data-i18n="lulc_mode_demo">Amazon–Cerrado Frontier LUC Demo (1990–2024)</option>
+                <option value="geotiff" data-i18n="lulc_mode_tif">Real GeoTIFF / COG Rasters (terrio pure-Rust)</option>
+              </select>
+            </div>
+            <div class="ctrl-row">
+              <label class="small-lbl" data-i18n="lulc_scheme">Classification Scheme</label>
+              <select id="lulc-scheme" class="input-select"></select>
+            </div>
+
+            <div id="lulc-real-paths" style="display:none; margin-top:0.65rem; border-top:1px solid var(--border); padding-top:0.65rem;">
+              <div class="ctrl-row">
+                <label class="small-lbl" data-i18n="lulc_paths_lbl">LULC GeoTIFF Path(s) (1 per line for multi-year LUC)</label>
+                <textarea id="lulc-paths" class="input-textarea" rows="2" placeholder="/data/mapbiomas_2000.tif&#10;/data/mapbiomas_2020.tif"></textarea>
+              </div>
+              <div class="ctrl-row">
+                <label class="small-lbl" data-i18n="lulc_precip_path">Precipitation Raster (12 or 12×N bands)</label>
+                <input id="lulc-precip-path" type="text" class="input-num" placeholder="/data/era5_precip.tif" />
+              </div>
+              <div class="ctrl-grid-2">
+                <div>
+                  <label class="small-lbl">Tmin Raster</label>
+                  <input id="lulc-tmin-path" type="text" class="input-num" placeholder="/data/tmin.tif" />
+                </div>
+                <div>
+                  <label class="small-lbl">Tmax Raster</label>
+                  <input id="lulc-tmax-path" type="text" class="input-num" placeholder="/data/tmax.tif" />
+                </div>
+              </div>
+              <div class="ctrl-grid-2">
+                <div>
+                  <label class="small-lbl" data-i18n="lulc_punit">Precip Unit</label>
+                  <select id="lulc-punit" class="input-select">
+                    <option value="mm">mm / mo</option>
+                    <option value="cm">cm / mo</option>
+                    <option value="meters">m / mo (ERA5)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="small-lbl" data-i18n="lulc_tunit">Temp Unit</label>
+                  <select id="lulc-tunit" class="input-select">
+                    <option value="celsius">°C</option>
+                    <option value="kelvin">Kelvin</option>
+                    <option value="celsius_x10">°C × 10</option>
+                  </select>
+                </div>
+              </div>
+              <div class="ctrl-grid-2">
+                <div>
+                  <label class="small-lbl">Sand Raster (opt.)</label>
+                  <input id="lulc-sand-path" type="text" class="input-num" placeholder="/data/sand.tif" />
+                </div>
+                <div>
+                  <label class="small-lbl">Clay Raster (opt.)</label>
+                  <input id="lulc-clay-path" type="text" class="input-num" placeholder="/data/clay.tif" />
+                </div>
+              </div>
+              <div class="ctrl-grid-2">
+                <div>
+                  <label class="small-lbl">pH Raster (opt.)</label>
+                  <input id="lulc-ph-path" type="text" class="input-num" placeholder="/data/ph.tif" />
+                </div>
+                <div>
+                  <label class="small-lbl">BulkD Raster (opt.)</label>
+                  <input id="lulc-bulkd-path" type="text" class="input-num" placeholder="/data/bulkd.tif" />
+                </div>
+              </div>
+              <label class="check-row"><input id="lulc-soilgrids" type="checkbox" checked /> <span data-i18n="lulc_sg">Auto-scale SoilGrids units (g/kg, cg/cm³, pH×10)</span></label>
+            </div>
+          </div>
+
+          <div class="card control-card">
+            <h3 data-i18n="lulc_scen_title">Climate, LUC &amp; COG Export</h3>
+            <div class="ctrl-grid-2">
+              <div>
+                <label class="small-lbl" data-i18n="lulc_spinup">Spinup (yr)</label>
+                <input id="lulc-spinup" type="number" class="input-num" min="10" max="500" value="80" />
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="lulc_trans">Transient (yr)</label>
+                <input id="lulc-trans" type="number" class="input-num" min="5" max="120" value="35" />
+              </div>
+            </div>
+            <div class="ctrl-row">
+              <label><span data-i18n="lulc_dt">Warming Shift (ΔT)</span> <strong id="val-lulc-dt">+1.5 °C</strong></label>
+              <input id="lulc-dt" type="range" min="-2" max="6" step="0.25" value="1.5" />
+            </div>
+            <div class="ctrl-row">
+              <label><span data-i18n="lulc_pscale">Rainfall Factor</span> <strong id="val-lulc-pscale">95%</strong></label>
+              <input id="lulc-pscale" type="range" min="60" max="140" step="5" value="95" />
+            </div>
+            <div class="ctrl-grid-2">
+              <div>
+                <label class="small-lbl" data-i18n="lbl_co2_start">CO₂ Start (ppm)</label>
+                <input id="lulc-co2-start" type="number" class="input-num" min="180" max="1500" value="354" />
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="lbl_co2_end">CO₂ End (ppm)</label>
+                <input id="lulc-co2-end" type="number" class="input-num" min="180" max="1500" value="422" />
+              </div>
+            </div>
+            <div class="ctrl-row">
+              <label class="small-lbl" data-i18n="lulc_till">Cropland Tillage Practice</label>
+              <select id="lulc-till" class="input-select">
+                <option value="moldboard_plow" data-i18n="opt_till_plow">Moldboard Plow + Harvest</option>
+                <option value="no_till_harvest" data-i18n="opt_till_notill">No-Till + Harvest</option>
+              </select>
+            </div>
+            <div class="ctrl-row">
+              <label class="small-lbl" data-i18n="lulc_export_dir">Export Cloud-Optimized GeoTIFFs to Dir (optional)</label>
+              <input id="lulc-export-dir" type="text" class="input-num" placeholder="/tmp/oxisol_cogs (leave blank for UI-only)" />
+            </div>
+            <button id="btn-run-lulc" class="btn btn-primary full-width" data-i18n="btn_run_lulc">Run Spatial LULC Simulation</button>
+          </div>
+
+          <div class="card control-card">
+            <h3 data-i18n="lulc_legend_title">LULC Class Legend</h3>
+            <div id="lulc-legend-list" class="lulc-legend"></div>
+          </div>
+
+          <div class="card control-card">
+            <h3 data-i18n="lulc_insp_title">Pixel Trajectory Inspector</h3>
+            <p class="muted-note" id="lulc-insp-hint" data-i18n="grid_click_hint">Click any active cell on the map to inspect its biogeochemical state.</p>
+            <div id="lulc-insp-body" class="inspector-table"></div>
+          </div>
+        </aside>
+
+        <div class="workspace">
+          <div class="kpi-grid kpi-grid-5">
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="lkpi_pixels">Active Pixels</div>
+              <div class="kpi-val" id="lkpi-pixels">—</div>
+              <div class="kpi-sub" id="lkpi-converted">—</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="gkpi_time">Wall Time</div>
+              <div class="kpi-val" id="lkpi-time">—</div>
+              <div class="kpi-sub" id="lkpi-rate">pixel-yr/s</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="lkpi_som">Mean Final SOMSC</div>
+              <div class="kpi-val" id="lkpi-som">—</div>
+              <div class="kpi-sub">g C / m²</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="lkpi_delta">Net Carbon Change (ΔSOMSC)</div>
+              <div class="kpi-val" id="lkpi-delta">—</div>
+              <div class="kpi-sub" id="lkpi-delta-ha">t C / ha</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="lkpi_cog">COG GeoTIFF Export</div>
+              <div class="kpi-val kpi-ok" id="lkpi-cog">terrio</div>
+              <div class="kpi-sub" id="lkpi-cog-sub">Pure-Rust COG ready</div>
+            </div>
+          </div>
+
+          <div class="card map-card">
+            <div class="card-head">
+              <h4 data-i18n="lulc_map_title">Georeferenced LULC &amp; Soil Carbon Map (EPSG:4326)</h4>
+              <div class="map-toolbar">
+                <select id="lulc-layer" class="input-select compact">
+                  <option value="delta_somsc">ΔSOMSC — Carbon Gain / Loss (g C/m²)</option>
+                  <option value="lulc_initial">LULC Initial (MapBiomas / ESA)</option>
+                  <option value="lulc_final">LULC Final (Post-Conversion)</option>
+                  <option value="somsc_final">Final SOMSC (g C/m²)</option>
+                  <option value="biomass_c">Live Biomass C (g C/m²)</option>
+                  <option value="npp">Annual NPP (g C/m²/yr)</option>
+                  <option value="aet">Annual AET (cm/yr)</option>
+                  <option value="minerl_n">Surface Mineral N (g N/m²)</option>
+                </select>
+                <button id="btn-lulc-csv" class="btn btn-ghost compact" data-i18n="btn_csv">Export CSV</button>
+              </div>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="lulc-canvas" width="960" height="540"></canvas>
+            </div>
+            <div class="colorbar-wrap" id="lulc-cb-wrap">
+              <span id="lcb-min">−500</span>
+              <div class="colorbar" id="lulc-colorbar"></div>
+              <span id="lcb-max">+500</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 4: REST API & DOCS ==================== -->
     <section id="panel-api" class="panel">
       <div class="api-grid">
         <div class="card doc-card">
@@ -397,6 +592,8 @@
             <div class="ep-item"><span class="method get">GET</span><code>/api/presets</code><span data-i18n="ep_presets">6 calibrated ecosystem presets (EN/PT-BR)</span></div>
             <div class="ep-item"><span class="method post">POST</span><code>/api/simulate</code><span data-i18n="ep_sim">Single-cell scenario trajectory + mass balance audit</span></div>
             <div class="ep-item"><span class="method post">POST</span><code>/api/grid/run</code><span data-i18n="ep_grid">Lock-free multi-core spatial grid execution</span></div>
+            <div class="ep-item"><span class="method get">GET</span><code>/api/lulc/schemes</code><span data-i18n="ep_lulc_s">MapBiomas &amp; ESA WorldCover LULC schemes</span></div>
+            <div class="ep-item"><span class="method post">POST</span><code>/api/lulc/run</code><span data-i18n="ep_lulc_r">Spatial LULC + modeled climate GeoTIFF/COG engine (terrio)</span></div>
           </div>
           <h4 style="margin-top:1.25rem;" data-i18n="api_example_title">Quick Python Example</h4>
           <pre class="code-box"><code>import requests

@@ -5,8 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Clean-room, high-performance Rust implementation of the CENTURY biogeochemical soil organic matter model core."
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Clean-room, high-performance Rust implementation of the CENTURY-like biogeochemical soil organic matter model core."
 
 [dependencies]
 serde.workspace = true
-thiserror.workspace = true

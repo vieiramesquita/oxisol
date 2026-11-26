@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Single-binary embedded Web Studio and REST JSON API for Oxisol biogeochemical simulations."
 
 [dependencies]

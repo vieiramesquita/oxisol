@@ -66,6 +66,29 @@ Exits with code `0` if within threshold (or if `--max-rel-err` is omitted), and 
 
 ---
 
+## `oxisol raster`
+
+Run a headless georeferenced LULC + modeled climate + soil simulation directly on GeoTIFF / Cloud-Optimized GeoTIFF / NetCDF rasters (powered by pure-Rust [`terrio`](https://github.com/opengeos/terrio)) and export DEFLATE-compressed COGs preserving CRS and geotransform:
+
+```bash
+# Run on real MapBiomas + ERA5/WorldClim + SoilGrids GeoTIFFs
+oxisol raster \
+  --lulc /data/mapbiomas_2000.tif \
+  --lulc /data/mapbiomas_2020.tif \
+  --scheme mapbiomas_br \
+  --precip /data/precip_12m.tif \
+  --tmin /data/tmin_12m.tif \
+  --tmax /data/tmax_12m.tif \
+  --sand /data/soilgrids_sand.tif \
+  --clay /data/soilgrids_clay.tif \
+  --out-dir /data/oxisol_cogs
+
+# Or run the built-in Amazon-Cerrado Demo and export 6 EPSG:4326 COGs immediately
+oxisol raster --out-dir /tmp/oxisol_demo_cogs
+```
+
+---
+
 ## `oxisol bench`
 
 Benchmark single-thread serial vs. `rayon` parallel vs. 8-wide SIMD `f32x8` SOM kernel throughput on your machine:

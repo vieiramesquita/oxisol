@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 //! Tier B Synthetic Coverage Suite (`oracle_tier_b`)
 //!
 //! Exercises every biogeochemical pathway and management disturbance that the

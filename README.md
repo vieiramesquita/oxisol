@@ -36,9 +36,9 @@ That is why **Oxisol** was created. Named after **Oxisols** (*Latossolos*) — t
   - **Explicit Profiles:** `CompatibilityProfile::ScientificClean` (`f64`, default) and `CompatibilityProfile::VemapV45Parity` (`f32`, historical VEMAP V4.5 audit mode).
 - **Single-Binary Embedded Web UI & REST API (`oxisol-web` / `oxisol serve`):**
   - **Oxisol Studio** ships inside the compiled `oxisol` binary with **zero Node.js or CDN runtime dependencies** — run locally or on a headless high-performance server over an SSH tunnel.
-  - Bilingual **EN / PT-BR** interface featuring the **Scenario Lab** (7 calibrated global presets incl. Southern Hemisphere Cerrado, A/B Baseline pinning with live `Δ` badges, interactive SVG charts, live pool flow diagram, CSV/JSON export) and **Spatial Grid & HPC Explorer** (live multi-core `rayon` execution, 2D interactive heatmap canvas, click-to-inspect cells, high-performance server throughput projection).
-- **100% Pure-Rust I/O (`oxisol-io`):**
-  - Native parsers for `.100`, `.sch`, `.v2` ASCII rasters, `co2.dat`, pure-Rust NetCDF-3 Classic & 64-bit Offset reader/writer, `site.nc` I/O, and complete lossless JSON checkpoints.
+  - Bilingual **EN / PT-BR** interface featuring **4 workspaces**: the **Scenario Lab** (7 calibrated global presets incl. Amazon Oxisol Rainforest & Southern Hemisphere Cerrado, A/B Baseline pinning with live `Δ` badges, interactive SVG charts, live pool flow diagram, CSV/JSON export), **Spatial Grid & HPC Explorer** (live multi-core `rayon` execution & 2D heatmap), **LULC & Raster Engine (GeoTIFF / COG via [`terrio`](https://github.com/opengeos/terrio))** (MapBiomas / ESA WorldCover dynamic land-use transitions, modeled climate & SoilGrids rasters, diverging `ΔSOMSC` carbon gain/loss map, and DEFLATE-compressed COG export), and **REST API & Docs**.
+- **100% Pure-Rust Geospatial & Biogeochemical I/O (`oxisol-io`):**
+  - Native parsers for `.100`, `.sch`, `.v2` ASCII rasters, `co2.dat`, pure-Rust NetCDF-3 Classic & 64-bit Offset reader/writer, `site.nc` I/O, lossless JSON checkpoints, and pure-Rust **GeoTIFF / Cloud-Optimized GeoTIFF (COG) / NetCDF** I/O via [`terrio`](https://github.com/opengeos/terrio) (zero `libgdal` dependency).
 - **Built for POWERFUL Servers (`oxisol-grid`):**
   - 64-byte cache-line-aligned `CellState<f64>` (~5.8 KiB, L1d-resident), zero shared mutable state (`Arc<RawBiomeParams>`), lock-free `rayon` chunked parallelism, and portable SIMD (`wide::f32x8` / `f64x4`).
 

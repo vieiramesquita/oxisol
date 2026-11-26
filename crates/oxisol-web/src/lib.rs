@@ -12,11 +12,14 @@
 //! - `GET /api/presets` — 6 scientifically calibrated ecosystem presets
 //! - `POST /api/simulate` — Interactive single-cell scenario run with mass-balance audit
 //! - `POST /api/grid/run` — Lock-free `rayon` multi-core spatial grid run + 2D map payload
+//! - `GET /api/lulc/schemes` — Built-in LULC reclassification schemes (MapBiomas Brasil, ESA WorldCover)
+//! - `POST /api/lulc/run` — Spatial LULC + modeled climate GeoTIFF/COG engine powered by `terrio`
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
 pub mod engine;
+pub mod lulc;
 pub mod models;
 pub mod presets;
 
@@ -32,6 +35,7 @@ use axum::{Json, Router};
 use oxisol_core::CellState;
 
 use crate::engine::{execute_grid_run, execute_single_cell};
+use crate::lulc::{builtin_lulc_schemes, execute_lulc_run, LulcRunRequest};
 use crate::models::{GridRunRequest, HealthResponse, SimulateRequest, SystemInfoResponse};
 use crate::presets::builtin_presets;
 
@@ -88,6 +92,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/presets", get(api_presets))
         .route("/api/simulate", post(api_simulate))
         .route("/api/grid/run", post(api_grid_run))
+        .route("/api/lulc/schemes", get(api_lulc_schemes))
+        .route("/api/lulc/run", post(api_lulc_run))
         .with_state(state)
 }
 
@@ -176,6 +182,27 @@ async fn api_grid_run(
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": format!("Grid task failed: {e}") })),
+        )
+            .into_response(),
+    }
+}
+
+async fn api_lulc_schemes() -> impl IntoResponse {
+    Json(builtin_lulc_schemes())
+}
+
+async fn api_lulc_run(Json(req): Json<LulcRunRequest>) -> impl IntoResponse {
+    let res = tokio::task::spawn_blocking(move || execute_lulc_run(&req)).await;
+    match res {
+        Ok(Ok(payload)) => (StatusCode::OK, Json(payload)).into_response(),
+        Ok(Err(msg)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": msg })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("LULC task failed: {e}") })),
         )
             .into_response(),
     }
@@ -335,5 +362,76 @@ mod tests {
         assert!(out.ncells > 50);
         assert!(out.mean_somsc > 100.0);
         assert!(out.cell_years_per_sec > 0.0);
+    }
+
+    #[tokio::test]
+    async fn lulc_endpoint_runs_amazon_cerrado_demo_and_exports_cogs() {
+        let app = test_app();
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/lulc/schemes")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let tmp_dir = std::env::temp_dir().join("oxisol_lulc_cog_test");
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        let req_body = LulcRunRequest {
+            mode: "demo".into(),
+            scheme_id: "mapbiomas_br".into(),
+            class_mappings: vec![],
+            lulc_paths: vec![],
+            precip_path: None,
+            tmin_path: None,
+            tmax_path: None,
+            precip_unit: crate::lulc::PrecipUnit::Mm,
+            temp_unit: crate::lulc::TempUnit::Celsius,
+            sand_path: None,
+            clay_path: None,
+            bulkd_path: None,
+            ph_path: None,
+            rock_path: None,
+            soilgrids_units: true,
+            spinup_years: 15,
+            transient_years: 12,
+            co2_start_ppm: 354.0,
+            co2_end_ppm: 422.0,
+            temp_delta_c: 1.5,
+            precip_scale: 0.92,
+            cropland_tillage: crate::models::TillageMode::MoldboardPlow,
+            threads: Some(2),
+            export_cog_dir: Some(tmp_dir.display().to_string()),
+        };
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/lulc/run")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), 16 * 1024 * 1024)
+            .await
+            .unwrap();
+        let out: crate::lulc::LulcRunResponse = serde_json::from_slice(&bytes).unwrap();
+        assert!(out.n_active > 1000);
+        assert!(out.n_converted > 100);
+        assert_eq!(out.exported_cogs.len(), 6);
+        // Verify exported COG reads back cleanly via terrio
+        let som_cog = oxisol_io::raster_geo::GeoRaster::open(&out.exported_cogs[0]).unwrap();
+        assert_eq!(som_cog.rows(), 36);
+        assert_eq!(som_cog.cols(), 56);
+        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }

@@ -9,6 +9,7 @@
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+#![allow(clippy::needless_range_loop)]
 
 pub mod ascii_v2;
 pub mod checkpoint;
@@ -16,6 +17,7 @@ pub mod co2_dat;
 pub mod error;
 pub mod netcdf3;
 pub mod params_100;
+pub mod raster_geo;
 pub mod schedule_sch;
 pub mod vemap;
 

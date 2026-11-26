@@ -55,6 +55,16 @@ Test and visualize lock-free `rayon` multi-core execution directly in your brows
 - Inspect real-time **Measured Throughput (`cell-yr/s`, `cell-mo/s`)** and a conservative **256-thread high-performance server projection**.
 - Switch heatmap layers (`SOMSC`, `SOM3 Passive`, `Large Wood`, `Annual NPP`, `Annual AET`, `Soil Water`, `Mineral N`, `Biome ID`) and **click any cell** to inspect its full state in the Cell Inspector panel.
 
-### 3. REST API & Docs
+### 3. LULC & Raster Engine (GeoTIFF / COG via `terrio`)
+
+Run spatially explicit simulations directly over Land-Use / Land-Cover maps and modeled climate/soil rasters — **100% pure Rust with zero `libgdal` dependency**, powered by [`terrio`](https://github.com/opengeos/terrio):
+
+- **Amazon–Cerrado Frontier LUC Demo (`1990–2024`, EPSG:4326):** Ready immediately out of the box, simulating progressive forest-to-pasture-to-cropland conversion across an equatorial–savanna climate gradient with live warming (`+ΔT °C`), rainfall factor, CO₂ ramp, and cropland tillage (`Moldboard Plow` vs. `No-Till`) controls.
+- **Real GeoTIFF / COG / NetCDF Rasters:** Supply one or multiple yearly LULC GeoTIFF paths (e.g. **MapBiomas Brasil** or **ESA WorldCover**), multi-band monthly climate rasters (`precip`, `tmin`, `tmax` from ERA5-Land, WorldClim, TerraClimate, CHIRPS, or CMIP6), and optional SoilGrids rasters (`sand`, `clay`, `bulkd`, `ph` with automatic unit scaling).
+- **Dynamic Land-Use Transitions:** Detects per-pixel class changes between years (e.g. Forest → Pasture clearing, Pasture → Cropland tillage, or Cropland → Forest regrowth).
+- **Interactive Categorical & Diverging Maps:** Switch between `ΔSOMSC` (diverging red/emerald net carbon loss/sequestration), `LULC Initial`, `LULC Final`, `Final SOMSC`, `Live Biomass C`, `NPP`, `AET`, and `Mineral N`, with click-to-inspect pixel trajectories.
+- **Cloud-Optimized GeoTIFF (COG) Export:** Provide an output directory to write DEFLATE-compressed, georeferenced COGs (`oxisol_somsc.tif`, `oxisol_delta_somsc.tif`, `oxisol_biomass_c.tif`, `oxisol_npp.tif`, `oxisol_aet.tif`, `oxisol_minerl_n.tif`) ready for QGIS, Python, or Google Earth Engine.
+
+### 4. REST API & Docs
 
 Provides live host hardware diagnostics (`CellState<f64>` L1d cache size, logical thread count), the endpoint reference, and copy-paste Python automation snippets.

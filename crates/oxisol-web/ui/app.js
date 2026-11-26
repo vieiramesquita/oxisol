@@ -5,6 +5,7 @@ const I18N = {
     brand_sub: "Open-Source CENTURY-like Biogeochemical Engine in Rust (C · N · P · S)",
     tab_lab: "Scenario Lab",
     tab_grid: "Spatial Grid & HPC",
+    tab_lulc: "LULC & Raster (GeoTIFF)",
     tab_api: "REST API & Docs",
     sec_preset: "Ecosystem Preset",
     sec_climate: "Climate & Atmosphere",
@@ -82,6 +83,33 @@ const I18N = {
     ep_presets: "7 calibrated ecosystem presets (EN/PT-BR)",
     ep_sim: "Single-cell scenario trajectory + mass balance audit",
     ep_grid: "Lock-free multi-core spatial grid execution",
+    ep_lulc_s: "MapBiomas & ESA WorldCover LULC schemes",
+    ep_lulc_r: "Spatial LULC + modeled climate GeoTIFF/COG engine (terrio)",
+    lulc_src_title: "LULC & Modeled Climate Source",
+    lulc_mode: "Execution Mode",
+    lulc_mode_demo: "Amazon–Cerrado Frontier LUC Demo (1990–2024)",
+    lulc_mode_tif: "Real GeoTIFF / COG Rasters (terrio pure-Rust)",
+    lulc_scheme: "Classification Scheme",
+    lulc_paths_lbl: "LULC GeoTIFF Path(s) (1 per line for multi-year LUC)",
+    lulc_precip_path: "Precipitation Raster (12 or 12×N bands)",
+    lulc_punit: "Precip Unit",
+    lulc_tunit: "Temp Unit",
+    lulc_sg: "Auto-scale SoilGrids units (g/kg, cg/cm³, pH×10)",
+    lulc_scen_title: "Climate, LUC & COG Export",
+    lulc_spinup: "Spinup (yr)",
+    lulc_trans: "Transient (yr)",
+    lulc_dt: "Warming Shift (ΔT)",
+    lulc_pscale: "Rainfall Factor",
+    lulc_till: "Cropland Tillage Practice",
+    lulc_export_dir: "Export Cloud-Optimized GeoTIFFs to Dir (optional)",
+    btn_run_lulc: "Run Spatial LULC Simulation",
+    lulc_legend_title: "LULC Class Legend",
+    lulc_insp_title: "Pixel Trajectory Inspector",
+    lkpi_pixels: "Active Pixels",
+    lkpi_som: "Mean Final SOMSC",
+    lkpi_delta: "Net Carbon Change (ΔSOMSC)",
+    lkpi_cog: "COG GeoTIFF Export",
+    lulc_map_title: "Georeferenced LULC & Soil Carbon Map (EPSG:4326)",
     api_example_title: "Quick Python Example",
     sys_card_title: "Architecture & Documentation",
     hpc_title: "Running Remotely on Modern High-Performance Servers",
@@ -91,6 +119,7 @@ const I18N = {
     brand_sub: "Engine Biogeoquímica CENTURY-like Open-Source em Rust (C · N · P · S)",
     tab_lab: "Laboratório de Cenários",
     tab_grid: "Grade Espacial & HPC",
+    tab_lulc: "Mapas LULC & Clima (GeoTIFF)",
     tab_api: "API REST & Docs",
     sec_preset: "Preset de Ecossistema",
     sec_climate: "Clima & Atmosfera",
@@ -168,6 +197,33 @@ const I18N = {
     ep_presets: "7 presets calibrados de ecossistemas (EN/PT-BR)",
     ep_sim: "Trajetória de célula única + auditoria de balanço de massa",
     ep_grid: "Execução espacial multi-core lock-free via rayon",
+    ep_lulc_s: "Esquemas de classes MapBiomas & ESA WorldCover",
+    ep_lulc_r: "Engine espacial LULC + clima modelado em GeoTIFF/COG (terrio)",
+    lulc_src_title: "Fonte LULC & Clima Modelado",
+    lulc_mode: "Modo de Execução",
+    lulc_mode_demo: "Demo Fronteira Amazônia–Cerrado (1990–2024)",
+    lulc_mode_tif: "Rasters GeoTIFF / COG Reais (terrio pure-Rust)",
+    lulc_scheme: "Esquema de Classificação",
+    lulc_paths_lbl: "Caminho(s) GeoTIFF LULC (1 por linha para série anual)",
+    lulc_precip_path: "Raster de Precipitação (12 ou 12×N bandas)",
+    lulc_punit: "Unidade Precip.",
+    lulc_tunit: "Unidade Temp.",
+    lulc_sg: "Auto-escalar SoilGrids (g/kg, cg/cm³, pH×10)",
+    lulc_scen_title: "Clima, Transições & Exportação COG",
+    lulc_spinup: "Spinup (anos)",
+    lulc_trans: "Transiente (anos)",
+    lulc_dt: "Aquecimento (ΔT)",
+    lulc_pscale: "Fator de Chuva",
+    lulc_till: "Preparo na Lavoura",
+    lulc_export_dir: "Exportar GeoTIFFs COG na pasta (opcional)",
+    btn_run_lulc: "Rodar Simulação Espacial LULC",
+    lulc_legend_title: "Legenda de Classes LULC",
+    lulc_insp_title: "Inspetor de Trajetória do Pixel",
+    lkpi_pixels: "Pixels Ativos",
+    lkpi_som: "SOMSC Médio Final",
+    lkpi_delta: "Balanço de Carbono (ΔSOMSC)",
+    lkpi_cog: "Exportação COG GeoTIFF",
+    lulc_map_title: "Mapa Georreferenciado de LULC & Carbono do Solo (EPSG:4326)",
     api_example_title: "Exemplo Rápido em Python",
     sys_card_title: "Arquitetura & Documentação",
     hpc_title: "Execução Remota em Servidores Modernos de Alto Desempenho",
@@ -179,10 +235,13 @@ const state = {
   lang: "en",
   system: null,
   presets: [],
+  lulcSchemes: [],
   lastSim: null,
   baselineSim: null,
   lastGrid: null,
-  gridCellMap: new Map()
+  gridCellMap: new Map(),
+  lastLulc: null,
+  lulcPixelMap: new Map()
 };
 
 const $ = (id) => document.getElementById(id);
@@ -200,6 +259,7 @@ function applyLang(lang) {
     if (I18N[lang][key]) el.textContent = I18N[lang][key];
   });
   populatePresetSelect(true);
+  populateLulcSchemeSelect(true);
   if (state.baselineSim) $("btn-pin").textContent = t("btn_pinned");
 }
 
@@ -244,6 +304,9 @@ function syncSliderLabels() {
   $("val-drain").textContent = Number($("in-drain").value).toFixed(2);
   $("val-years").textContent = `${$("in-years").value} yr`;
   $("val-grid-years").textContent = `${$("grid-years").value} yr`;
+  const ldt = Number($("lulc-dt").value);
+  $("val-lulc-dt").textContent = `${ldt >= 0 ? "+" : ""}${ldt.toFixed(2)} °C`;
+  $("val-lulc-pscale").textContent = `${$("lulc-pscale").value}%`;
   updateTextureBar();
 }
 
@@ -696,6 +759,215 @@ function downloadBlob(filename, content, mime) {
   URL.revokeObjectURL(a.href);
 }
 
+// ==================== LULC & RASTER ENGINE (TAB 3) ====================
+function populateLulcSchemeSelect(keep = false) {
+  const sel = $("lulc-scheme");
+  if (!sel || !state.lulcSchemes.length) return;
+  const prev = keep ? sel.value : null;
+  sel.innerHTML = "";
+  for (const s of state.lulcSchemes) {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = state.lang === "pt" ? s.name_pt : s.name_en;
+    sel.appendChild(opt);
+  }
+  if (prev && state.lulcSchemes.some((s) => s.id === prev)) sel.value = prev;
+  renderLulcLegend();
+}
+
+function activeLulcClasses() {
+  const sid = $("lulc-scheme").value;
+  const scheme = state.lulcSchemes.find((s) => s.id === sid) || state.lulcSchemes[0];
+  return scheme ? scheme.classes : [];
+}
+
+function renderLulcLegend() {
+  const classes = activeLulcClasses();
+  $("lulc-legend-list").innerHTML = classes.map((c) => `
+    <div class="lulc-leg-row">
+      <span class="lulc-leg-left">
+        <span class="lulc-swatch" style="background:${c.color}"></span>
+        <span>${state.lang === "pt" ? c.label_pt : c.label_en}</span>
+      </span>
+      <span class="lulc-code">${c.code} · ${c.preset_id === "masked" ? "mask" : c.preset_id.split("_")[0]}</span>
+    </div>
+  `).join("");
+}
+
+function divergingColor(val, maxAbs) {
+  const norm = Math.max(-1, Math.min(1, val / Math.max(maxAbs, 1e-6)));
+  if (norm < 0) {
+    const u = -norm;
+    const r = Math.round(30 + u * 214);
+    const g = Math.round(41 + u * 22);
+    const b = Math.round(59 + u * 35);
+    return `rgb(${r},${g},${b})`;
+  } else {
+    const u = norm;
+    const r = Math.round(30 - u * 14);
+    const g = Math.round(41 + u * 144);
+    const b = Math.round(59 + u * 70);
+    return `rgb(${r},${g},${b})`;
+  }
+}
+
+function drawLulcMap() {
+  const res = state.lastLulc;
+  if (!res) return;
+  const layer = $("lulc-layer").value;
+  const canvas = $("lulc-canvas");
+  const ctx = canvas.getContext("2d");
+  const cw = canvas.width;
+  const ch = canvas.height;
+  ctx.fillStyle = "#0b192c"; // Water/river background
+  ctx.fillRect(0, 0, cw, ch);
+
+  const cellW = cw / res.cols;
+  const cellH = ch / res.rows;
+  const isCategorical = layer === "lulc_initial" || layer === "lulc_final";
+  const isDiverging = layer === "delta_somsc";
+
+  const colorMap = new Map(res.legend.map((c) => [c.code, c.color]));
+  const cbWrap = $("lulc-cb-wrap");
+  const cbBar = $("lulc-colorbar");
+
+  if (isCategorical) {
+    cbWrap.style.display = "none";
+    for (const p of res.pixels) {
+      ctx.fillStyle = colorMap.get(p[layer]) || "#94a3b8";
+      ctx.fillRect(p.col * cellW, p.row * cellH, Math.ceil(cellW), Math.ceil(cellH));
+    }
+    return;
+  }
+
+  cbWrap.style.display = "flex";
+  if (isDiverging) {
+    let maxAbs = 10;
+    for (const p of res.pixels) maxAbs = Math.max(maxAbs, Math.abs(p.delta_somsc));
+    cbBar.style.background = "linear-gradient(90deg, #f43f5e, #1e293b, #10b981)";
+    $("lcb-min").textContent = `-${fmt(maxAbs, 0)} g C/m²`;
+    $("lcb-max").textContent = `+${fmt(maxAbs, 0)} g C/m²`;
+    for (const p of res.pixels) {
+      ctx.fillStyle = divergingColor(p.delta_somsc, maxAbs);
+      ctx.fillRect(p.col * cellW, p.row * cellH, Math.ceil(cellW), Math.ceil(cellH));
+    }
+  } else {
+    let minV = Infinity, maxV = -Infinity;
+    for (const p of res.pixels) {
+      const v = Number(p[layer]);
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+    }
+    if (!Number.isFinite(minV) || maxV <= minV) { minV = 0; maxV = 1; }
+    cbBar.style.background = "linear-gradient(90deg, #1b1035, #3b2d7b, #1d6f8a, #10b981, #a3e635, #fde047)";
+    $("lcb-min").textContent = fmt(minV, 1);
+    $("lcb-max").textContent = fmt(maxV, 1);
+    for (const p of res.pixels) {
+      ctx.fillStyle = viridisColor((Number(p[layer]) - minV) / (maxV - minV));
+      ctx.fillRect(p.col * cellW, p.row * cellH, Math.ceil(cellW), Math.ceil(cellH));
+    }
+  }
+}
+
+function inspectLulcPixel(p) {
+  const res = state.lastLulc;
+  const labelOf = (code) => {
+    const m = res && res.legend.find((c) => c.code === code);
+    return m ? `${state.lang === "pt" ? m.label_pt : m.label_en} [${code}]` : `[${code}]`;
+  };
+  const dSign = p.delta_somsc >= 0 ? "+" : "";
+  $("lulc-insp-hint").style.display = "none";
+  $("lulc-insp-body").innerHTML = [
+    ["Coordinates", `${p.lat.toFixed(2)}°, ${p.lon.toFixed(2)}°`],
+    ["LULC Initial", labelOf(p.lulc_initial)],
+    ["LULC Final", labelOf(p.lulc_final)],
+    ["SOMSC Initial", `${fmt(p.somsc_initial, 1)} g C/m²`],
+    ["SOMSC Final", `${fmt(p.somsc_final, 1)} g C/m²`],
+    ["ΔSOMSC", `${dSign}${fmt(p.delta_somsc, 1)} g C/m² (${dSign}${fmt(p.delta_somsc / 100, 2)} t C/ha)`],
+    ["Live Biomass C", `${fmt(p.biomass_c, 1)} g C/m²`],
+    ["Annual NPP", `${fmt(p.npp, 1)} g C/m²/yr`],
+    ["Annual AET", `${fmt(p.aet, 1)} cm/yr`],
+    ["Mineral N (L0)", `${fmt(p.minerl_n, 3)} g N/m²`]
+  ].map(([k, v]) => `<div class="insp-row"><span>${k}</span><span>${v}</span></div>`).join("");
+}
+
+async function runLulcSimulation() {
+  const btn = $("btn-run-lulc");
+  btn.disabled = true;
+  btn.textContent = t("btn_running");
+  try {
+    const mode = $("lulc-mode").value;
+    const rawPaths = ($("lulc-paths").value || "")
+      .split(/\r?\n|,/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const optStr = (id) => {
+      const v = ($(id).value || "").trim();
+      return v.length ? v : null;
+    };
+    const req = {
+      mode,
+      scheme_id: $("lulc-scheme").value || "mapbiomas_br",
+      class_mappings: activeLulcClasses(),
+      lulc_paths: rawPaths,
+      precip_path: optStr("lulc-precip-path"),
+      tmin_path: optStr("lulc-tmin-path"),
+      tmax_path: optStr("lulc-tmax-path"),
+      precip_unit: $("lulc-punit").value,
+      temp_unit: $("lulc-tunit").value,
+      sand_path: optStr("lulc-sand-path"),
+      clay_path: optStr("lulc-clay-path"),
+      bulkd_path: optStr("lulc-bulkd-path"),
+      ph_path: optStr("lulc-ph-path"),
+      rock_path: null,
+      soilgrids_units: $("lulc-soilgrids").checked,
+      spinup_years: Number($("lulc-spinup").value),
+      transient_years: Number($("lulc-trans").value),
+      co2_start_ppm: Number($("lulc-co2-start").value),
+      co2_end_ppm: Number($("lulc-co2-end").value),
+      temp_delta_c: Number($("lulc-dt").value),
+      precip_scale: Number($("lulc-pscale").value) / 100.0,
+      cropland_tillage: $("lulc-till").value,
+      threads: state.system ? state.system.logical_cpus : null,
+      export_cog_dir: optStr("lulc-export-dir")
+    };
+    const resp = await fetch("/api/lulc/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req)
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+    state.lastLulc = data;
+    state.lulcPixelMap = new Map(data.pixels.map((p) => [`${p.row}:${p.col}`, p]));
+
+    const pctConv = data.n_active ? (data.n_converted / data.n_active) * 100 : 0;
+    $("lkpi-pixels").textContent = `${data.n_active}`;
+    $("lkpi-converted").textContent = `${data.n_converted} converted (${fmt(pctConv, 1)}%)`;
+    $("lkpi-time").textContent = `${fmt(data.elapsed_secs, 2)} s`;
+    $("lkpi-rate").textContent = `${fmt(data.pixel_years_per_sec, 0)} pixel-yr/s (${data.threads_used}T)`;
+    $("lkpi-som").textContent = fmt(data.mean_somsc, 0);
+    const dSign = data.mean_delta_somsc >= 0 ? "+" : "";
+    const dEl = $("lkpi-delta");
+    dEl.textContent = `${dSign}${fmt(data.mean_delta_somsc, 1)}`;
+    dEl.style.color = data.mean_delta_somsc >= 0 ? "var(--emerald)" : "var(--rose)";
+    $("lkpi-delta-ha").textContent = `${dSign}${fmt(data.mean_delta_t_c_ha, 2)} t C/ha`;
+    $("lkpi-cog").textContent = data.exported_cogs.length ? `${data.exported_cogs.length} COGs` : "terrio";
+    $("lkpi-cog-sub").textContent = data.exported_cogs.length
+      ? data.exported_cogs[0]
+      : "Set dir to write GeoTIFFs";
+
+    drawLulcMap();
+    const convertedSample = data.pixels.find((p) => p.converted) || data.pixels[0];
+    if (convertedSample) inspectLulcPixel(convertedSample);
+  } catch (err) {
+    alert(`LULC raster error: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t("btn_run_lulc");
+  }
+}
+
 // ==================== INITIALIZATION ====================
 async function init() {
   // Tab switching
@@ -707,6 +979,7 @@ async function init() {
       const target = btn.getAttribute("data-tab");
       $(`panel-${target}`).classList.add("active");
       if (target === "grid" && !state.lastGrid) runSpatialGrid();
+      if (target === "lulc" && !state.lastLulc) runLulcSimulation();
     });
   });
 
@@ -769,10 +1042,37 @@ async function init() {
     if (cell) inspectCell(cell);
   });
 
-  // Fetch system info & presets in parallel
-  const [sysRes, preRes] = await Promise.all([fetch("/api/system"), fetch("/api/presets")]);
+  $("lulc-mode").addEventListener("change", () => {
+    $("lulc-real-paths").style.display = $("lulc-mode").value === "geotiff" ? "block" : "none";
+  });
+  $("lulc-scheme").addEventListener("change", renderLulcLegend);
+  $("lulc-layer").addEventListener("change", drawLulcMap);
+  $("btn-run-lulc").addEventListener("click", runLulcSimulation);
+  $("btn-lulc-csv").addEventListener("click", () => {
+    if (!state.lastLulc) return;
+    const cols = Object.keys(state.lastLulc.pixels[0]);
+    const lines = [cols.join(","), ...state.lastLulc.pixels.map((r) => cols.map((c) => r[c]).join(","))];
+    downloadBlob("oxisol_lulc_spatial.csv", lines.join("\n"), "text/csv");
+  });
+  $("lulc-canvas").addEventListener("click", (ev) => {
+    if (!state.lastLulc) return;
+    const rect = ev.target.getBoundingClientRect();
+    const col = Math.floor(((ev.clientX - rect.left) / rect.width) * state.lastLulc.cols);
+    const row = Math.floor(((ev.clientY - rect.top) / rect.height) * state.lastLulc.rows);
+    const pix = state.lulcPixelMap.get(`${row}:${col}`);
+    if (pix) inspectLulcPixel(pix);
+  });
+
+  // Fetch system info, presets & LULC schemes in parallel
+  const [sysRes, preRes, lulcRes] = await Promise.all([
+    fetch("/api/system"),
+    fetch("/api/presets"),
+    fetch("/api/lulc/schemes")
+  ]);
   state.system = await sysRes.json();
   state.presets = await preRes.json();
+  state.lulcSchemes = await lulcRes.json();
+  populateLulcSchemeSelect(false);
 
   $("hw-pill").textContent = `${state.system.logical_cpus}T · CellState ${state.system.cell_state_f64_bytes} B`;
   $("grid-threads").value = state.system.logical_cpus;

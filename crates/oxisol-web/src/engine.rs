@@ -161,8 +161,8 @@ fn execute_single_cell_typed<F: Float>(
 
             if let Some(rep) = audit {
                 max_err = max_err.max(rep.carbon_err.to_f64().abs());
-                for e in 0..elements.nelem() {
-                    max_err = max_err.max(rep.elem_err[e].to_f64().abs());
+                for err in rep.elem_err.iter().take(elements.nelem()) {
+                    max_err = max_err.max(err.to_f64().abs());
                 }
             }
         }
@@ -221,10 +221,10 @@ fn execute_single_cell_typed<F: Float>(
     let mut prof_n = 0.0_f64;
     let mut prof_p = 0.0_f64;
     let mut prof_s = 0.0_f64;
-    for l in 0..derived.nlayer {
-        prof_n += state.minerl[l][0].to_f64();
-        prof_p += state.minerl[l][1].to_f64();
-        prof_s += state.minerl[l][2].to_f64();
+    for layer in state.minerl.iter().take(derived.nlayer) {
+        prof_n += layer[0].to_f64();
+        prof_p += layer[1].to_f64();
+        prof_s += layer[2].to_f64();
     }
 
     SimulateResponse {

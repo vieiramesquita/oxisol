@@ -113,10 +113,10 @@ pub fn base_biome_params<F: Float>(preset_id: &str) -> RawBiomeParams<F> {
     };
     crops.insert(uroc.name.clone(), uroc);
 
-    // Annual grain crop (maize/wheat style)
+    // Annual grain crop (maize/wheat style; realistic ~6-8 Mg C/ha/yr NPP)
     let grain = CropParams::<F> {
         name: "GRAIN".into(),
-        prdx1: f(420.0),
+        prdx1: f(300.0),
         ppdf: [f(24.0), f(40.0), f(1.0), f(3.2)],
         himax: f(0.45),
         hiwsf: f(0.50),
@@ -126,11 +126,14 @@ pub fn base_biome_params<F: Float>(preset_id: &str) -> RawBiomeParams<F> {
     };
     crops.insert(grain.name.clone(), grain);
 
-    // Arid shrubland herbaceous cover
+    // Arid perennial shrubland cover (drought-adapted low-turnover canopy)
     let shrub = CropParams::<F> {
         name: "SHRB".into(),
         prdx1: f(145.0),
         ppdf: [f(22.0), f(42.0), f(1.0), f(3.5)],
+        bioflg: F::ZERO,
+        fsdeth: [f(0.10), f(0.25), f(0.15), f(180.0)],
+        rdr: f(0.03),
         fligni: [[f(0.10), f(0.28)], [f(0.001), f(-0.001)]],
         ..Default::default()
     };
@@ -783,6 +786,12 @@ pub fn build_schedule_from_request(req: &SimulateRequest, years: i32) -> Schedul
                 month: late_summer,
                 kind: EventKind::Harv("GRAIN".into()),
             });
+            // Annual grain harvest terminates the growing season cleanly (no phantom post-harvest regrowth).
+            events.push(ScheduledEvent {
+                rel_year: ry,
+                month: late_summer,
+                kind: EventKind::Last,
+            });
         }
 
         if req.fire_interval_yr > 0 && ry == repeat_years {
@@ -793,7 +802,7 @@ pub fn build_schedule_from_request(req: &SimulateRequest, years: i32) -> Schedul
             });
         }
 
-        if initial_system != SystemKind::Forest {
+        if initial_system != SystemKind::Forest && req.tillage == TillageMode::None {
             events.push(ScheduledEvent {
                 rel_year: ry,
                 month: autumn,

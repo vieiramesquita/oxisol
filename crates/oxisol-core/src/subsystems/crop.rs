@@ -323,8 +323,8 @@ pub fn step_crop<F: Float>(
             };
             let d = F::ONE - prof_rel;
             let drought_death = crop.fsdeth[0] * d * d;
-            let shade_death = if agc > crop.fsdeth[3] {
-                crop.fsdeth[2]
+            let shade_death = if agc > crop.fsdeth[3] && agc > F::EPS_GUARD {
+                crop.fsdeth[2] * ((agc - crop.fsdeth[3]) / agc)
             } else {
                 F::ZERO
             };

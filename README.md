@@ -3,12 +3,27 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
 [![Safe Rust](https://img.shields.io/badge/unsafe-forbidden-brightgreen.svg)](crates/oxisol-core/src/lib.rs)
-[![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-06b6d4.svg)](https://vieiramesquita.github.io/oxisol/)
+[![Docs](https://img.shields.io/badge/Docs-vieiramesquita.github.io%2Foxisol-06b6d4.svg)](https://vieiramesquita.github.io/oxisol/)
 
-**Oxisol** is an **open-source, clean-room, MIT-licensed *CENTURY-like* biogeochemical ecosystem engine** written from scratch in pure, safe Rust (`#![forbid(unsafe_code)]`) and engineered for 2020s multi-core CPUs, modern high-performance servers, and interactive web workflows.
+**[Documentation Portal (`mdBook`)](https://vieiramesquita.github.io/oxisol/) · [Rust API Reference (`rustdoc`)](https://vieiramesquita.github.io/oxisol/api/oxisol_core/index.html) · [Benchmarks & Parity Report](BENCHMARKS.md)**
 
-> **Why "Oxisol" — and why a CENTURY-like rewrite?**
-> *Oxisols* (Latossolos) are deeply weathered tropical soils rich in iron oxides — literally colored like **rust**. Meanwhile, the canonical 1990s CENTURY Fortran/C distribution remains proprietary (*All Rights Reserved* / non-open-source per the EU JRC MIDAS Policy Model Inventory). **Foundational climate and soil carbon science shouldn't stay locked inside proprietary 1990s Fortran.** Oxisol delivers an independent, clean-room, community-owned CENTURY-like model derived from published peer-reviewed biogeochemical literature — **2.1× faster than `gfortran -O2` on a single core, 14.2× faster on 8C/16T**, with zero C dependencies and a single-binary embedded Web Studio.
+---
+
+## The Story Behind Oxisol
+
+Soils are the largest terrestrial reservoir of organic carbon on Earth — storing more carbon than the atmosphere and all living vegetation combined ([Scharlemann et al., 2014](https://doi.org/10.4155/cmt.13.77)). Small shifts in how soil organic matter decomposes or accumulates under warming, changing rainfall, deforestation, or agricultural management can tip regional ecosystems from carbon sinks into carbon sources.
+
+In the late 1980s, William J. Parton and colleagues at Colorado State University set out to understand what governs soil organic matter across the North American Great Plains. Their framework — the **CENTURY** model ([Parton et al., 1987](https://doi.org/10.2136/sssaj1987.03615995005100050015x); [Parton et al., 1988](https://doi.org/10.1007/BF02180320); [Parton et al., 1993](https://doi.org/10.1029/93GB02042); Metherell et al., 1993) — partitioned soil carbon and nutrients into *active*, *slow*, and *passive* pools turning over on annual, decadal, and centennial timescales. Over the following decades, CENTURY became one of the most influential biogeochemical models in Earth system science, powering landmark continental intercomparisons such as **VEMAP** ([VEMAP Members, 1995](https://doi.org/10.1029/95GB02746); [Parton et al., 2005](https://doi.org/10.3334/ORNLDAAC/820)) and informing high-resolution continental policy inventories such as the European Commission's 1 km² agricultural soil carbon assessments ([EC JRC MIDAS](https://web.jrc.ec.europa.eu/policy-model-inventory/explore/models/model-century/)).
+
+Yet nearly forty years later, a strange paradox remained: **the science had always been published openly in peer-reviewed journals, while the reference code stayed locked behind a proprietary, non-free 1990s Fortran 77/C distribution** (*All Rights Reserved* / non-open-source per [EC JRC MIDAS](https://web.jrc.ec.europa.eu/policy-model-inventory/explore/models/model-century/)), tied to single-threaded execution, mutable global `COMMON` blocks, Northern-Hemisphere phenology assumptions, and legacy numerical quirks.
+
+**Foundational climate and soil carbon science should not stay trapped inside closed-source 1990s code.**
+
+That is why **Oxisol** was created. Named after **Oxisols** (*Latossolos*) — the deeply weathered, iron-oxide-rich tropical soils of the Amazon and Cerrado whose **rust** hue mirrors the **Rust** language — **Oxisol** is an **open-source, clean-room, MIT-licensed *CENTURY-like* biogeochemical ecosystem engine** built from first principles of the published scientific literature:
+
+- **100% Safe, Pure Rust (`#![forbid(unsafe_code)]`):** Zero C/Fortran runtime dependencies, deterministic memory-safe parallelism, and strict `< 1e-10 g/m²` C/N/P/S mass-conservation auditing in `f64`.
+- **Scientifically Validated at Continental Scale:** Reproduces archived VEMAP CENTURY V4.5 equilibrium soil organic carbon across **3,168 cells × 1,000 years** at **$R^2 = 0.9756$** ($r = 0.9877$, median relative difference **6.08%**) — while fixing legacy bugs and adding native **Southern Hemisphere** deciduous phenology.
+- **Engineered for Modern Servers & Interactive Science:** Runs **2.17× faster than `gfortran -O2` on a single core**, **14.22× faster on 8C/16T** (a full 38-million cell-month continental millennium in **10.87 seconds**), and ships with a zero-dependency embedded web workbench (**Oxisol Studio**) and REST API in a single binary.
 
 ---
 
@@ -120,8 +135,22 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --open
 
 ---
 
-## Scientific Citations & License
+## Scientific References & License
 
-Oxisol implements biogeochemical concepts established in Parton et al. (1983, 1987, 1988, 1993, 1994), Metherell et al. (1993), Probert et al. (1995), Rawls et al. (1982), Gupta & Larson (1979), Ryan (1991), and VEMAP (1995).
+Oxisol is an independent, clean-room implementation grounded in the following peer-reviewed literature and public technical specifications:
+
+- **Scharlemann, J. P. W., Tanner, E. V. J., Hiederer, R., & Kapos, V. (2014).** Global soil carbon: understanding and managing the largest terrestrial carbon pool. *Carbon Management*, 5(1), 81–91. https://doi.org/10.4155/cmt.13.77
+- **Parton, W. J., Schimel, D. S., Cole, C. V., & Ojima, D. S. (1987).** Analysis of Factors Controlling Soil Organic Matter Levels in Great Plains Grasslands. *Soil Science Society of America Journal*, 51(5), 1173–1179. https://doi.org/10.2136/sssaj1987.03615995005100050015x
+- **Parton, W. J., Stewart, J. W. B., & Cole, C. V. (1988).** Dynamics of C, N, P and S in grassland soils: a model. *Biogeochemistry*, 5, 109–131. https://doi.org/10.1007/BF02180320
+- **Parton, W. J., Scurlock, J. M. O., Ojima, D. S., Gilmanov, T. G., et al. (1993).** Observations and modeling of biomass and soil organic matter dynamics for the grassland biome worldwide. *Global Biogeochemical Cycles*, 7(4), 785–809. https://doi.org/10.1029/93GB02042
+- **Metherell, A. K., Harding, L. A., Cole, C. V., & Parton, W. J. (1993).** *CENTURY Soil Organic Matter Model Environment. Technical Documentation. Agroecosystem Version 4.0.* Great Plains Systems Research Unit (GPSR) Technical Report No. 4, USDA-ARS, Fort Collins, CO.
+- **VEMAP Members (1995).** Vegetation/ecosystem modeling and analysis project: Comparing biogeography and biogeochemistry models in a continental-scale study of terrestrial ecosystem responses to climate change and CO₂ doubling. *Global Biogeochemical Cycles*, 9(4), 407–437. https://doi.org/10.1029/95GB02746
+- **Parton, W. J., Ojima, D. S., & Schimel, D. S. (2005).** CENTURY: Modeling Ecosystem Responses to Climate Change, Version 4 (VEMAP 1995). *ORNL Distributed Active Archive Center (DAAC)*. https://doi.org/10.3334/ORNLDAAC/820
+- **Linacre, E. T. (1977).** A simple formula for estimating evaporation rates in various climates, using temperature data alone. *Agricultural Meteorology*, 18(6), 409–424. https://doi.org/10.1016/0002-1571(77)90007-3
+- **Gupta, S. C., & Larson, W. E. (1979).** Estimating soil water retention characteristics from particle size distribution, organic matter percent, and bulk density. *Water Resources Research*, 15(6), 1633–1635. https://doi.org/10.1029/WR015i006p01633
+- **Rawls, W. J., Brakensiek, D. L., & Saxton, K. E. (1982).** Estimation of Soil Water Properties. *Transactions of the ASAE*, 25(5), 1316–1320. https://doi.org/10.13031/2013.33720
+- **Ryan, M. G. (1991).** Effects of Climate Change on Plant Respiration. *Ecological Applications*, 1(2), 157–167. https://doi.org/10.2307/1941808
+- **Probert, M. E., Keating, B. A., Thompson, J. P., & Parton, W. J. (1995).** Modelling water, nitrogen, and crop yield for a long-term fallow management experiment. *Australian Journal of Experimental Agriculture*, 35(7), 941–950. https://doi.org/10.1071/EA9950941
+- **European Commission — Joint Research Centre (JRC).** MIDAS Policy Model Inventory: *CENTURY agroecosystem dynamic model*. https://web.jrc.ec.europa.eu/policy-model-inventory/explore/models/model-century/
 
 Released under the **[MIT License](LICENSE)**.

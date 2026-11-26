@@ -2,16 +2,15 @@
 
 **Oxisol** is an **open-source, clean-room, MIT-licensed *CENTURY-like* biogeochemical ecosystem engine** written from scratch in safe, modern Rust (`#![forbid(unsafe_code)]`).
 
-> **Why "Oxisol"?**
-> *Oxisols* (Latossolos) are deeply weathered tropical soils rich in iron oxides — literally colored like **rust**. The name celebrates both soil science and the **Rust** language powering this next-generation engine.
+## The Story Behind Oxisol
 
-## Why Rebuild a CENTURY-like Model in the 2020s?
+Soils store more organic carbon than the atmosphere and all living terrestrial vegetation combined ([Scharlemann et al., 2014](https://doi.org/10.4155/cmt.13.77)). In the late 1980s, William J. Parton and colleagues at Colorado State University formulated the **CENTURY** framework ([Parton et al., 1987](https://doi.org/10.2136/sssaj1987.03615995005100050015x); [Parton et al., 1988](https://doi.org/10.1007/BF02180320); [Parton et al., 1993](https://doi.org/10.1029/93GB02042); Metherell et al., 1993) to simulate carbon, nitrogen, phosphorus, and sulfur cycling across active, slow, and passive soil organic matter pools. The model became a cornerstone of continental syntheses such as **VEMAP** ([VEMAP Members, 1995](https://doi.org/10.1029/95GB02746); [Parton et al., 2005](https://doi.org/10.3334/ORNLDAAC/820)) and regional policy assessments ([EC JRC MIDAS](https://web.jrc.ec.europa.eu/policy-model-inventory/explore/models/model-century/)).
 
-For more than three decades, CENTURY-family process models have underpinned global soil organic carbon (SOC) accounting, climate impact assessments, and agricultural policy evaluations (including 1 km² continental soil inventories). Yet the canonical legacy distribution remains **proprietary, non-open-source software** locked inside 1990s single-threaded Fortran 77/C with global `COMMON` state, legacy disk-bound I/O, and undocumented platform quirks.
+Yet while the underlying equations were published openly, the canonical 1990s Fortran 77/C distribution remained proprietary (*All Rights Reserved* / non-free software), single-threaded, and anchored to Northern-Hemisphere assumptions.
 
-**Foundational climate and soil carbon science should not stay trapped behind closed-source 1990s code.**
+**Named after *Oxisols* (*Latossolos*)** — the deeply weathered, iron-oxide-rich tropical soils whose **rust** hue mirrors the **Rust** language — **Oxisol** brings this foundational biogeochemical science into the open-source era: auditable, memory-safe, hemisphere-aware, **14.2× faster**, and ready for modern servers and interactive web exploration.
 
-**Oxisol** delivers a transparent, auditable, community-owned alternative:
+## Legacy Distribution vs. Oxisol
 
 | Capability | Legacy 1990s Distribution | **Oxisol (Rust, MIT)** |
 |---|---|---|

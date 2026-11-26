@@ -379,6 +379,19 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+        let schemes_bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let schemes: Vec<crate::lulc::LulcScheme> = serde_json::from_slice(&schemes_bytes).unwrap();
+        let mb = schemes.iter().find(|s| s.id == "mapbiomas_br").unwrap();
+        assert_eq!(mb.name_en, "MapBiomas Brasil (Collection 11)");
+        assert_eq!(mb.classes.len(), 41);
+        for required_code in [1, 3, 4, 6, 7, 15, 20, 39, 62, 75, 77, 84, 91, 33] {
+            assert!(
+                mb.classes.iter().any(|c| c.code == required_code),
+                "missing MapBiomas Collection 11 code {required_code}"
+            );
+        }
 
         let tmp_dir = std::env::temp_dir().join("oxisol_lulc_cog_test");
         let _ = std::fs::remove_dir_all(&tmp_dir);

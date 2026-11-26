@@ -48,14 +48,14 @@ const I18N = {
     btn_clear_pin: "Clear Baseline",
     btn_csv: "Export CSV",
     btn_json: "Export JSON",
-    kpi_somsc: "Total Soil Carbon (SOMSC)",
+    kpi_somsc: "Total Soil Carbon (SOMSC · 0–20 cm)",
     kpi_npp: "Annual NPP",
     kpi_aet: "Actual ET (AET)",
     kpi_minn: "Profile Mineral N",
     kpi_mb: "Mass Balance Residual",
     kpi_mb_sub: "Exact C·N·P·S Audit",
     kpi_speed: "Engine Speed",
-    chart_som_title: "Soil Organic Carbon Pools (g C/m²)",
+    chart_som_title: "Soil Organic Carbon Pools",
     chart_flux_title: "Ecosystem Fluxes: NPP, Respiration & Water",
     chart_bio_title: "Vegetation Carbon & Surface Mineral Nutrients",
     chart_diag_title: "Live Biogeochemical Pool Architecture",
@@ -163,14 +163,14 @@ const I18N = {
     btn_clear_pin: "Limpar Baseline",
     btn_csv: "Exportar CSV",
     btn_json: "Exportar JSON",
-    kpi_somsc: "Carbono Total do Solo (SOMSC)",
+    kpi_somsc: "Carbono Total do Solo (SOMSC · 0–20 cm)",
     kpi_npp: "NPP Anual",
     kpi_aet: "Evapotranspiração Real (AET)",
     kpi_minn: "N Mineral no Perfil",
     kpi_mb: "Resíduo de Balanço de Massa",
     kpi_mb_sub: "Auditoria Exata C·N·P·S",
     kpi_speed: "Velocidade da Engine",
-    chart_som_title: "Pools de Carbono Orgânico do Solo (g C/m²)",
+    chart_som_title: "Pools de Carbono Orgânico do Solo",
     chart_flux_title: "Fluxos do Ecossistema: NPP, Respiração & Água",
     chart_bio_title: "Biomassa Vegetal & Nutrientes Minerais",
     chart_diag_title: "Arquitetura Viva de Pools Biogeoquímicos",
@@ -235,16 +235,92 @@ const I18N = {
 
 const state = {
   lang: "en",
+  carbonUnit: "mgha", // "mgha" (Mg C/ha, default) or "gm2" (g C/m²)
   system: null,
   presets: [],
   lulcSchemes: [],
   lastSim: null,
   baselineSim: null,
   lastGrid: null,
+  selectedGridCell: null,
   gridCellMap: new Map(),
   lastLulc: null,
+  selectedLulcPixel: null,
   lulcPixelMap: new Map()
 };
+
+const CARBON_LAYERS = new Set(["somsc", "som3c", "rlwodc", "npp", "somsc_final", "delta_somsc", "biomass_c"]);
+const CO2E_FACTOR = 44.0 / 12.0;
+
+function cScale(val) {
+  return state.carbonUnit === "mgha" ? val / 100.0 : val;
+}
+function cUnit() {
+  return state.carbonUnit === "mgha" ? "Mg C/ha" : "g C/m²";
+}
+function cFluxUnit() {
+  const yr = state.lang === "pt" ? "ano" : "yr";
+  return state.carbonUnit === "mgha" ? `Mg C/ha/${yr}` : `g C/m²/${yr}`;
+}
+function cDigits(isFlux = false) {
+  if (state.carbonUnit === "mgha") return isFlux ? 2 : 1;
+  return isFlux ? 1 : 0;
+}
+function isCarbonLayer(layer) {
+  return CARBON_LAYERS.has(layer);
+}
+
+function syncUnitLabels() {
+  const u = cUnit();
+  const fu = cFluxUnit();
+  const somHead = $("chart-som-head");
+  if (somHead) somHead.textContent = `${t("chart_som_title")} (${u})`;
+  const lkpiSomUnit = $("lkpi-som-unit");
+  if (lkpiSomUnit) lkpiSomUnit.textContent = u;
+
+  const mapSel = $("map-layer");
+  if (mapSel) {
+    const labels = {
+      somsc: `Total SOMSC (${u})`,
+      som3c: `Passive SOM3 (${u})`,
+      rlwodc: `Forest Large Wood (${u})`,
+      npp: `Annual NPP (${fu})`
+    };
+    for (const opt of mapSel.options) {
+      if (labels[opt.value]) opt.textContent = labels[opt.value];
+    }
+  }
+  const lulcSel = $("lulc-layer");
+  if (lulcSel) {
+    const labels = {
+      delta_somsc: `ΔSOMSC — Carbon Gain / Loss (${u})`,
+      somsc_final: `Final SOMSC (${u})`,
+      biomass_c: `Live Biomass C (${u})`,
+      npp: `Annual NPP (${fu})`
+    };
+    for (const opt of lulcSel.options) {
+      if (labels[opt.value]) opt.textContent = labels[opt.value];
+    }
+  }
+}
+
+function applyCarbonUnit(unit) {
+  state.carbonUnit = unit;
+  $("unit-mgha").classList.toggle("active", unit === "mgha");
+  $("unit-gm2").classList.toggle("active", unit === "gm2");
+  syncUnitLabels();
+  if (state.lastSim) renderSimulation(state.lastSim);
+  if (state.lastGrid) {
+    renderGridSummary(state.lastGrid);
+    drawGridHeatmap();
+    if (state.selectedGridCell) inspectCell(state.selectedGridCell);
+  }
+  if (state.lastLulc) {
+    renderLulcSummary(state.lastLulc);
+    drawLulcMap();
+    if (state.selectedLulcPixel) inspectLulcPixel(state.selectedLulcPixel);
+  }
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -262,7 +338,17 @@ function applyLang(lang) {
   });
   populatePresetSelect(true);
   populateLulcSchemeSelect(true);
+  syncUnitLabels();
   syncSliderLabels();
+  if (state.lastSim) renderSimulation(state.lastSim);
+  if (state.lastGrid) {
+    renderGridSummary(state.lastGrid);
+    if (state.selectedGridCell) inspectCell(state.selectedGridCell);
+  }
+  if (state.lastLulc) {
+    renderLulcSummary(state.lastLulc);
+    if (state.selectedLulcPixel) inspectLulcPixel(state.selectedLulcPixel);
+  }
   if (state.baselineSim) $("btn-pin").textContent = t("btn_pinned");
 }
 
@@ -667,7 +753,8 @@ function renderLineChart(hostId, legendId, seriesDefs, xVals, baselineDefs = [])
     const yv = (maxY * i) / 4;
     const yp = sy(yv);
     gridSvg += `<line x1="${pad.l}" y1="${yp}" x2="${W - pad.r}" y2="${yp}" stroke="#233044" stroke-dasharray="3,3"/>`;
-    gridSvg += `<text x="${pad.l - 7}" y="${yp + 4}" text-anchor="end" fill="#8b9bb4" font-size="10" font-family="monospace">${yv >= 1000 ? (yv / 1000).toFixed(1) + "k" : yv.toFixed(0)}</text>`;
+    const yLabel = yv >= 1000 ? (yv / 1000).toFixed(1) + "k" : maxY < 25 ? yv.toFixed(1) : yv.toFixed(0);
+    gridSvg += `<text x="${pad.l - 7}" y="${yp + 4}" text-anchor="end" fill="#8b9bb4" font-size="10" font-family="monospace">${yLabel}</text>`;
   }
   const xTicks = 5;
   for (let i = 0; i <= xTicks; i++) {
@@ -724,6 +811,9 @@ function renderLineChart(hostId, legendId, seriesDefs, xVals, baselineDefs = [])
 }
 
 function renderPoolDiagram(pools, co2End) {
+  const u = cUnit();
+  const dStock = cDigits(false);
+  const dFlux = cDigits(true);
   $("diag-co2-pill").textContent = `${fmt(co2End, 0)} ppm CO₂`;
   $("pool-diagram").innerHTML = `<svg viewBox="0 0 640 250">
     <defs>
@@ -743,32 +833,32 @@ function renderPoolDiagram(pools, co2End) {
     <!-- Atmosphere -->
     <rect x="28" y="12" width="194" height="48" rx="9" fill="#17202d" stroke="#06b6d4" stroke-width="1.5"/>
     <text x="125" y="31" text-anchor="middle" fill="#06b6d4" font-size="11" font-weight="700">ATMOSPHERE CO₂</text>
-    <text x="125" y="49" text-anchor="middle" fill="#e6edf3" font-size="11" font-family="monospace">NPP ${fmt(pools.final_npp, 0)} · Resp ${fmt(pools.final_resp, 0)}</text>
+    <text x="125" y="49" text-anchor="middle" fill="#e6edf3" font-size="11" font-family="monospace">NPP ${fmt(cScale(pools.final_npp), dFlux)} · Resp ${fmt(cScale(pools.final_resp), dFlux)}</text>
 
     <!-- Live Vegetation -->
     <rect x="28" y="100" width="186" height="58" rx="9" fill="#112620" stroke="#10b981" stroke-width="1.6"/>
     <text x="121" y="120" text-anchor="middle" fill="#10b981" font-size="11" font-weight="700">LIVE VEGETATION</text>
-    <text x="121" y="143" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="700" font-family="monospace">${fmt(pools.vegetation_c, 0)} g C/m²</text>
+    <text x="121" y="143" text-anchor="middle" fill="#e6edf3" font-size="14.5" font-weight="700" font-family="monospace">${fmt(cScale(pools.vegetation_c), dStock)} ${u}</text>
 
     <!-- Litter & Dead Wood -->
     <rect x="262" y="100" width="128" height="58" rx="9" fill="#17202d" stroke="#94a3b8" stroke-width="1.4"/>
     <text x="326" y="120" text-anchor="middle" fill="#cbd5e1" font-size="10.5" font-weight="700">LITTER &amp; WOOD</text>
-    <text x="326" y="143" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700" font-family="monospace">${fmt(pools.litter_and_deadwood_c, 0)} g C</text>
+    <text x="326" y="143" text-anchor="middle" fill="#e6edf3" font-size="13.5" font-weight="700" font-family="monospace">${fmt(cScale(pools.litter_and_deadwood_c), dStock)} ${state.carbonUnit === "mgha" ? "Mg" : "g"}</text>
 
     <!-- SOM1 Active -->
     <rect x="446" y="20" width="172" height="54" rx="9" fill="#102520" stroke="#10b981" stroke-width="1.5"/>
     <text x="532" y="39" text-anchor="middle" fill="#10b981" font-size="10.5" font-weight="700">SOM1 ACTIVE</text>
-    <text x="532" y="61" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700" font-family="monospace">${fmt(pools.som1_c, 1)} g C/m²</text>
+    <text x="532" y="61" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700" font-family="monospace">${fmt(cScale(pools.som1_c), state.carbonUnit === "mgha" ? 2 : 1)} ${u}</text>
 
     <!-- SOM2 Slow -->
     <rect x="446" y="102" width="172" height="52" rx="9" fill="#251d10" stroke="#f59e0b" stroke-width="1.5"/>
     <text x="532" y="120" text-anchor="middle" fill="#f59e0b" font-size="10.5" font-weight="700">SOM2 SLOW</text>
-    <text x="532" y="142" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700" font-family="monospace">${fmt(pools.som2_c, 0)} g C/m²</text>
+    <text x="532" y="142" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700" font-family="monospace">${fmt(cScale(pools.som2_c), dStock)} ${u}</text>
 
     <!-- SOM3 Passive -->
     <rect x="446" y="180" width="172" height="54" rx="9" fill="#1d152c" stroke="#8b5cf6" stroke-width="1.5"/>
     <text x="532" y="199" text-anchor="middle" fill="#a78bfa" font-size="10.5" font-weight="700">SOM3 PASSIVE</text>
-    <text x="532" y="221" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700" font-family="monospace">${fmt(pools.som3_c, 0)} g C/m²</text>
+    <text x="532" y="221" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700" font-family="monospace">${fmt(cScale(pools.som3_c), dStock)} ${u}</text>
 
     <!-- Mineral N / P / S -->
     <rect x="28" y="192" width="362" height="44" rx="9" fill="#101c28" stroke="#06b6d4" stroke-width="1.4"/>
@@ -780,12 +870,16 @@ function renderPoolDiagram(pools, co2End) {
 function renderSimulation(sim) {
   const fp = sim.final_pools;
   const bp = state.baselineSim ? state.baselineSim.final_pools : null;
+  const u = cUnit();
+  const fu = cFluxUnit();
+  const dStock = cDigits(false);
+  const dFlux = cDigits(true);
 
-  $("kpi-somsc").textContent = fmt(fp.somsc, 0);
-  renderDelta("kpi-somsc-delta", fp.somsc, bp ? bp.somsc : null, "g C/m²");
+  $("kpi-somsc").textContent = fmt(cScale(fp.somsc), dStock);
+  renderDelta("kpi-somsc-delta", cScale(fp.somsc), bp ? cScale(bp.somsc) : null, u);
 
-  $("kpi-npp").textContent = fmt(fp.final_npp, 1);
-  renderDelta("kpi-npp-delta", fp.final_npp, bp ? bp.final_npp : null, "g C/m²/yr");
+  $("kpi-npp").textContent = fmt(cScale(fp.final_npp), dFlux);
+  renderDelta("kpi-npp-delta", cScale(fp.final_npp), bp ? cScale(bp.final_npp) : null, fu);
 
   $("kpi-aet").textContent = fmt(fp.final_aet, 1);
   renderDelta("kpi-aet-delta", fp.final_aet, bp ? bp.final_aet : null, "cm/yr");
@@ -804,14 +898,14 @@ function renderSimulation(sim) {
     "chart-som",
     "legend-som",
     [
-      { label: "Total SOMSC", color: "#10b981", width: 2.5, data: sim.series.map((p) => p.somsc) },
-      { label: "SOM2 Slow", color: "#f59e0b", width: 1.9, data: sim.series.map((p) => p.som2c) },
-      { label: "SOM3 Passive", color: "#8b5cf6", width: 1.9, data: sim.series.map((p) => p.som3c) },
-      { label: "SOM1 Active", color: "#06b6d4", width: 1.5, data: sim.series.map((p) => p.som1c) }
+      { label: "Total SOMSC", color: "#10b981", width: 2.5, data: sim.series.map((p) => cScale(p.somsc)) },
+      { label: "SOM2 Slow", color: "#f59e0b", width: 1.9, data: sim.series.map((p) => cScale(p.som2c)) },
+      { label: "SOM3 Passive", color: "#8b5cf6", width: 1.9, data: sim.series.map((p) => cScale(p.som3c)) },
+      { label: "SOM1 Active", color: "#06b6d4", width: 1.5, data: sim.series.map((p) => cScale(p.som1c)) }
     ],
     x,
     baseMatch
-      ? [{ label: "Baseline SOMSC (A)", color: "#e6edf3", dashed: true, data: state.baselineSim.series.map((p) => p.somsc) }]
+      ? [{ label: "Baseline SOMSC (A)", color: "#e6edf3", dashed: true, data: state.baselineSim.series.map((p) => cScale(p.somsc)) }]
       : []
   );
 
@@ -819,13 +913,13 @@ function renderSimulation(sim) {
     "chart-flux",
     "legend-flux",
     [
-      { label: "NPP (g C/m²/yr)", color: "#10b981", width: 2.2, data: sim.series.map((p) => p.npp) },
-      { label: "Resp (g C/m²/yr)", color: "#f43f5e", width: 1.8, data: sim.series.map((p) => p.resp) },
+      { label: `NPP (${fu})`, color: "#10b981", width: 2.2, data: sim.series.map((p) => cScale(p.npp)) },
+      { label: `Resp (${fu})`, color: "#f43f5e", width: 1.8, data: sim.series.map((p) => cScale(p.resp)) },
       { label: "AET (cm/yr)", color: "#06b6d4", width: 1.8, data: sim.series.map((p) => p.aet) }
     ],
     x,
     baseMatch
-      ? [{ label: "Baseline NPP (A)", color: "#e6edf3", dashed: true, data: state.baselineSim.series.map((p) => p.npp) }]
+      ? [{ label: "Baseline NPP (A)", color: "#e6edf3", dashed: true, data: state.baselineSim.series.map((p) => cScale(p.npp)) }]
       : []
   );
 
@@ -833,9 +927,9 @@ function renderSimulation(sim) {
     "chart-bio",
     "legend-bio",
     [
-      { label: "Large Wood C", color: "#f59e0b", width: 2.0, data: sim.series.map((p) => p.rlwodc) },
-      { label: "Herbaceous C", color: "#10b981", width: 2.0, data: sim.series.map((p) => p.aglivc + p.bglivc) },
-      { label: "Litter C", color: "#94a3b8", width: 1.6, data: sim.series.map((p) => p.litter_c) }
+      { label: `Large Wood C (${u})`, color: "#f59e0b", width: 2.0, data: sim.series.map((p) => cScale(p.rlwodc)) },
+      { label: `Herbaceous C (${u})`, color: "#10b981", width: 2.0, data: sim.series.map((p) => cScale(p.aglivc + p.bglivc)) },
+      { label: `Litter C (${u})`, color: "#94a3b8", width: 1.6, data: sim.series.map((p) => cScale(p.litter_c)) }
     ],
     x
   );
@@ -899,20 +993,22 @@ function drawGridHeatmap() {
   ctx.fillStyle = "#070b10";
   ctx.fillRect(0, 0, cw, ch);
 
+  const scale = (v) => (isCarbonLayer(layer) ? cScale(v) : v);
   let minV = Infinity, maxV = -Infinity;
   for (const c of grid.cells) {
-    const v = Number(c[layer]);
+    const v = scale(Number(c[layer]));
     if (v < minV) minV = v;
     if (v > maxV) maxV = v;
   }
   if (!Number.isFinite(minV) || maxV <= minV) { minV = 0; maxV = 1; }
-  $("cb-min").textContent = fmt(minV, layer === "biome_id" ? 0 : 1);
-  $("cb-max").textContent = fmt(maxV, layer === "biome_id" ? 0 : 1);
+  const suffix = isCarbonLayer(layer) ? ` ${layer === "npp" ? cFluxUnit() : cUnit()}` : "";
+  $("cb-min").textContent = `${fmt(minV, layer === "biome_id" ? 0 : 1)}${suffix}`;
+  $("cb-max").textContent = `${fmt(maxV, layer === "biome_id" ? 0 : 1)}${suffix}`;
 
   const cellW = cw / grid.cols;
   const cellH = ch / grid.rows;
   for (const c of grid.cells) {
-    const v = Number(c[layer]);
+    const v = scale(Number(c[layer]));
     const norm = (v - minV) / (maxV - minV);
     ctx.fillStyle = viridisColor(norm);
     ctx.fillRect(c.col * cellW, c.row * cellH, Math.ceil(cellW), Math.ceil(cellH));
@@ -920,18 +1016,34 @@ function drawGridHeatmap() {
 }
 
 function inspectCell(cell) {
+  state.selectedGridCell = cell;
+  const u = cUnit();
+  const fu = cFluxUnit();
+  const dStock = state.carbonUnit === "mgha" ? 2 : 1;
   $("cell-inspector-hint").style.display = "none";
   $("cell-inspector-body").innerHTML = [
     ["Coordinates", `Row ${cell.row}, Col ${cell.col}`],
     ["Biome ID", `${cell.biome_id}`],
-    ["Total SOMSC", `${fmt(cell.somsc, 1)} g C/m²`],
-    ["Passive SOM3", `${fmt(cell.som3c, 1)} g C/m²`],
-    ["Large Wood", `${fmt(cell.rlwodc, 1)} g C/m²`],
-    ["Annual NPP", `${fmt(cell.npp, 1)} g C/m²/yr`],
+    ["Total SOMSC", `${fmt(cScale(cell.somsc), dStock)} ${u}`],
+    ["Passive SOM3", `${fmt(cScale(cell.som3c), dStock)} ${u}`],
+    ["Large Wood", `${fmt(cScale(cell.rlwodc), dStock)} ${u}`],
+    ["Annual NPP", `${fmt(cScale(cell.npp), dStock)} ${fu}`],
     ["Annual AET", `${fmt(cell.aet, 1)} cm/yr`],
     ["Soil Water (L0)", `${fmt(cell.soil_water_cm, 2)} cm`],
     ["Mineral N (L0)", `${fmt(cell.minerl_n, 3)} g N/m²`]
   ].map(([k, v]) => `<div class="insp-row"><span>${k}</span><span>${v}</span></div>`).join("");
+}
+
+function renderGridSummary(data) {
+  $("gkpi-cells").textContent = `${data.ncells} × ${data.nyears}`;
+  $("gkpi-source").textContent = data.source_label;
+  $("gkpi-time").textContent = `${fmt(data.elapsed_secs, 3)} s`;
+  $("gkpi-threads").textContent = `${data.threads_used} threads`;
+  $("gkpi-rate").textContent = `${fmt(data.cell_years_per_sec, 0)}`;
+  $("gkpi-mo-rate").textContent = `${fmt(data.cell_months_per_sec / 1e6, 2)}M cell-mo/s`;
+  $("gkpi-hpc").textContent = `${fmt(data.hpc_256t_est_cell_yr_s / 1e6, 2)}M`;
+  $("gkpi-som").textContent = `${fmt(cScale(data.mean_somsc), cDigits(false))} ${cUnit()}`;
+  $("gkpi-npp").textContent = `NPP: ${fmt(cScale(data.mean_npp), cDigits(true))} ${cFluxUnit()}`;
 }
 
 async function runSpatialGrid() {
@@ -960,15 +1072,7 @@ async function runSpatialGrid() {
     state.lastGrid = data;
     state.gridCellMap = new Map(data.cells.map((c) => [`${c.row}:${c.col}`, c]));
 
-    $("gkpi-cells").textContent = `${data.ncells} × ${data.nyears}`;
-    $("gkpi-source").textContent = data.source_label;
-    $("gkpi-time").textContent = `${fmt(data.elapsed_secs, 3)} s`;
-    $("gkpi-threads").textContent = `${data.threads_used} threads`;
-    $("gkpi-rate").textContent = `${fmt(data.cell_years_per_sec, 0)}`;
-    $("gkpi-mo-rate").textContent = `${fmt(data.cell_months_per_sec / 1e6, 2)}M cell-mo/s`;
-    $("gkpi-hpc").textContent = `${fmt(data.hpc_256t_est_cell_yr_s / 1e6, 2)}M`;
-    $("gkpi-som").textContent = `${fmt(data.mean_somsc, 0)} g C/m²`;
-    $("gkpi-npp").textContent = `NPP: ${fmt(data.mean_npp, 1)} g C/m²/yr`;
+    renderGridSummary(data);
 
     drawGridHeatmap();
     if (data.cells.length) inspectCell(data.cells[Math.floor(data.cells.length / 2)]);
@@ -1075,50 +1179,80 @@ function drawLulcMap() {
     let maxAbs = 10;
     for (const p of res.pixels) maxAbs = Math.max(maxAbs, Math.abs(p.delta_somsc));
     cbBar.style.background = "linear-gradient(90deg, #f43f5e, #1e293b, #10b981)";
-    $("lcb-min").textContent = `-${fmt(maxAbs, 0)} g C/m²`;
-    $("lcb-max").textContent = `+${fmt(maxAbs, 0)} g C/m²`;
+    const dDig = state.carbonUnit === "mgha" ? 1 : 0;
+    $("lcb-min").textContent = `-${fmt(cScale(maxAbs), dDig)} ${cUnit()}`;
+    $("lcb-max").textContent = `+${fmt(cScale(maxAbs), dDig)} ${cUnit()}`;
     for (const p of res.pixels) {
       ctx.fillStyle = divergingColor(p.delta_somsc, maxAbs);
       ctx.fillRect(p.col * cellW, p.row * cellH, Math.ceil(cellW), Math.ceil(cellH));
     }
   } else {
+    const scale = (v) => (isCarbonLayer(layer) ? cScale(v) : v);
     let minV = Infinity, maxV = -Infinity;
     for (const p of res.pixels) {
-      const v = Number(p[layer]);
+      const v = scale(Number(p[layer]));
       if (v < minV) minV = v;
       if (v > maxV) maxV = v;
     }
     if (!Number.isFinite(minV) || maxV <= minV) { minV = 0; maxV = 1; }
+    const suffix = isCarbonLayer(layer) ? ` ${layer === "npp" ? cFluxUnit() : cUnit()}` : "";
     cbBar.style.background = "linear-gradient(90deg, #1b1035, #3b2d7b, #1d6f8a, #10b981, #a3e635, #fde047)";
-    $("lcb-min").textContent = fmt(minV, 1);
-    $("lcb-max").textContent = fmt(maxV, 1);
+    $("lcb-min").textContent = `${fmt(minV, 1)}${suffix}`;
+    $("lcb-max").textContent = `${fmt(maxV, 1)}${suffix}`;
     for (const p of res.pixels) {
-      ctx.fillStyle = viridisColor((Number(p[layer]) - minV) / (maxV - minV));
+      ctx.fillStyle = viridisColor((scale(Number(p[layer])) - minV) / (maxV - minV));
       ctx.fillRect(p.col * cellW, p.row * cellH, Math.ceil(cellW), Math.ceil(cellH));
     }
   }
 }
 
 function inspectLulcPixel(p) {
+  state.selectedLulcPixel = p;
   const res = state.lastLulc;
   const labelOf = (code) => {
     const m = res && res.legend.find((c) => c.code === code);
     return m ? `${state.lang === "pt" ? m.label_pt : m.label_en} [${code}]` : `[${code}]`;
   };
+  const u = cUnit();
+  const fu = cFluxUnit();
+  const dStock = state.carbonUnit === "mgha" ? 2 : 1;
   const dSign = p.delta_somsc >= 0 ? "+" : "";
+  const co2e = (p.delta_somsc / 100.0) * CO2E_FACTOR;
   $("lulc-insp-hint").style.display = "none";
   $("lulc-insp-body").innerHTML = [
     ["Coordinates", `${p.lat.toFixed(2)}°, ${p.lon.toFixed(2)}°`],
     ["LULC Initial", labelOf(p.lulc_initial)],
     ["LULC Final", labelOf(p.lulc_final)],
-    ["SOMSC Initial", `${fmt(p.somsc_initial, 1)} g C/m²`],
-    ["SOMSC Final", `${fmt(p.somsc_final, 1)} g C/m²`],
-    ["ΔSOMSC", `${dSign}${fmt(p.delta_somsc, 1)} g C/m² (${dSign}${fmt(p.delta_somsc / 100, 2)} t C/ha)`],
-    ["Live Biomass C", `${fmt(p.biomass_c, 1)} g C/m²`],
-    ["Annual NPP", `${fmt(p.npp, 1)} g C/m²/yr`],
+    ["SOMSC Initial", `${fmt(cScale(p.somsc_initial), dStock)} ${u}`],
+    ["SOMSC Final", `${fmt(cScale(p.somsc_final), dStock)} ${u}`],
+    ["ΔSOMSC", `${dSign}${fmt(cScale(p.delta_somsc), dStock)} ${u} (${dSign}${fmt(co2e, 2)} t CO₂e/ha)`],
+    ["Live Biomass C", `${fmt(cScale(p.biomass_c), dStock)} ${u}`],
+    ["Annual NPP", `${fmt(cScale(p.npp), dStock)} ${fu}`],
     ["Annual AET", `${fmt(p.aet, 1)} cm/yr`],
     ["Mineral N (L0)", `${fmt(p.minerl_n, 3)} g N/m²`]
   ].map(([k, v]) => `<div class="insp-row"><span>${k}</span><span>${v}</span></div>`).join("");
+}
+
+function renderLulcSummary(data) {
+  const pctConv = data.n_active ? (data.n_converted / data.n_active) * 100 : 0;
+  $("lkpi-pixels").textContent = `${data.n_active}`;
+  $("lkpi-converted").textContent = `${data.n_converted} converted (${fmt(pctConv, 1)}%)`;
+  $("lkpi-time").textContent = `${fmt(data.elapsed_secs, 2)} s`;
+  $("lkpi-rate").textContent = `${fmt(data.pixel_years_per_sec, 0)} pixel-yr/s (${data.threads_used}T)`;
+  $("lkpi-som").textContent = fmt(cScale(data.mean_somsc), cDigits(false));
+  $("lkpi-som-unit").textContent = cUnit();
+  const dSign = data.mean_delta_somsc >= 0 ? "+" : "";
+  const dEl = $("lkpi-delta");
+  dEl.textContent = `${dSign}${fmt(cScale(data.mean_delta_somsc), state.carbonUnit === "mgha" ? 2 : 1)}`;
+  dEl.style.color = data.mean_delta_somsc >= 0 ? "var(--emerald)" : "var(--rose)";
+  const co2e = data.mean_delta_t_c_ha * CO2E_FACTOR;
+  $("lkpi-delta-ha").textContent = state.carbonUnit === "mgha"
+    ? `Mg C/ha · ${dSign}${fmt(co2e, 2)} t CO₂e/ha`
+    : `g C/m² · ${dSign}${fmt(data.mean_delta_t_c_ha, 2)} Mg C/ha`;
+  $("lkpi-cog").textContent = data.exported_cogs.length ? `${data.exported_cogs.length} COGs` : "terrio";
+  $("lkpi-cog-sub").textContent = data.exported_cogs.length
+    ? data.exported_cogs[0]
+    : "Set dir to write GeoTIFFs";
 }
 
 async function runLulcSimulation() {
@@ -1171,21 +1305,7 @@ async function runLulcSimulation() {
     state.lastLulc = data;
     state.lulcPixelMap = new Map(data.pixels.map((p) => [`${p.row}:${p.col}`, p]));
 
-    const pctConv = data.n_active ? (data.n_converted / data.n_active) * 100 : 0;
-    $("lkpi-pixels").textContent = `${data.n_active}`;
-    $("lkpi-converted").textContent = `${data.n_converted} converted (${fmt(pctConv, 1)}%)`;
-    $("lkpi-time").textContent = `${fmt(data.elapsed_secs, 2)} s`;
-    $("lkpi-rate").textContent = `${fmt(data.pixel_years_per_sec, 0)} pixel-yr/s (${data.threads_used}T)`;
-    $("lkpi-som").textContent = fmt(data.mean_somsc, 0);
-    const dSign = data.mean_delta_somsc >= 0 ? "+" : "";
-    const dEl = $("lkpi-delta");
-    dEl.textContent = `${dSign}${fmt(data.mean_delta_somsc, 1)}`;
-    dEl.style.color = data.mean_delta_somsc >= 0 ? "var(--emerald)" : "var(--rose)";
-    $("lkpi-delta-ha").textContent = `${dSign}${fmt(data.mean_delta_t_c_ha, 2)} t C/ha`;
-    $("lkpi-cog").textContent = data.exported_cogs.length ? `${data.exported_cogs.length} COGs` : "terrio";
-    $("lkpi-cog-sub").textContent = data.exported_cogs.length
-      ? data.exported_cogs[0]
-      : "Set dir to write GeoTIFFs";
+    renderLulcSummary(data);
 
     drawLulcMap();
     const convertedSample = data.pixels.find((p) => p.converted) || data.pixels[0];
@@ -1215,6 +1335,9 @@ async function init() {
 
   $("lang-en").addEventListener("click", () => applyLang("en"));
   $("lang-pt").addEventListener("click", () => applyLang("pt"));
+  $("unit-mgha").addEventListener("click", () => applyCarbonUnit("mgha"));
+  $("unit-gm2").addEventListener("click", () => applyCarbonUnit("gm2"));
+  syncUnitLabels();
 
   document.querySelectorAll('input[type="range"]').forEach((inp) => {
     inp.addEventListener("input", syncSliderLabels);

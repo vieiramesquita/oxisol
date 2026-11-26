@@ -25,6 +25,10 @@
 
     <div class="topbar-right">
       <div class="hw-pill" id="hw-pill">Detecting CPU...</div>
+      <div class="lang-switch" aria-label="Carbon Unit" title="Carbon unit (1 Mg C/ha = 100 g C/m²)">
+        <button id="unit-mgha" class="lang-btn active">Mg C/ha</button>
+        <button id="unit-gm2" class="lang-btn">g C/m²</button>
+      </div>
       <div class="lang-switch" aria-label="Language">
         <button id="lang-en" class="lang-btn active">EN</button>
         <button id="lang-pt" class="lang-btn">PT-BR</button>
@@ -211,14 +215,14 @@
 
           <div class="kpi-grid">
             <div class="kpi-card">
-              <div class="kpi-label" data-i18n="kpi_somsc">Total Soil Carbon (SOMSC)</div>
+              <div class="kpi-label" data-i18n="kpi_somsc">Total Soil Carbon (SOMSC · 0–20 cm)</div>
               <div class="kpi-val" id="kpi-somsc">—</div>
-              <div class="kpi-sub" id="kpi-somsc-delta">g C / m²</div>
+              <div class="kpi-sub" id="kpi-somsc-delta">Mg C/ha</div>
             </div>
             <div class="kpi-card">
               <div class="kpi-label" data-i18n="kpi_npp">Annual NPP</div>
               <div class="kpi-val" id="kpi-npp">—</div>
-              <div class="kpi-sub" id="kpi-npp-delta">g C / m² / yr</div>
+              <div class="kpi-sub" id="kpi-npp-delta">Mg C/ha/yr</div>
             </div>
             <div class="kpi-card">
               <div class="kpi-label" data-i18n="kpi_aet">Actual ET (AET)</div>
@@ -245,7 +249,7 @@
           <div class="charts-grid">
             <div class="card chart-card">
               <div class="card-head">
-                <h4 data-i18n="chart_som_title">Soil Organic Carbon Pools (g C/m²)</h4>
+                <h4 id="chart-som-head" data-i18n="chart_som_title">Soil Organic Carbon Pools (Mg C/ha)</h4>
                 <div class="legend" id="legend-som"></div>
               </div>
               <div id="chart-som" class="chart-host"></div>
@@ -551,12 +555,12 @@
             <div class="kpi-card">
               <div class="kpi-label" data-i18n="lkpi_som">Mean Final SOMSC</div>
               <div class="kpi-val" id="lkpi-som">—</div>
-              <div class="kpi-sub">g C / m²</div>
+              <div class="kpi-sub" id="lkpi-som-unit">Mg C/ha</div>
             </div>
             <div class="kpi-card">
               <div class="kpi-label" data-i18n="lkpi_delta">Net Carbon Change (ΔSOMSC)</div>
               <div class="kpi-val" id="lkpi-delta">—</div>
-              <div class="kpi-sub" id="lkpi-delta-ha">t C / ha</div>
+              <div class="kpi-sub" id="lkpi-delta-ha">t CO₂e/ha</div>
             </div>
             <div class="kpi-card">
               <div class="kpi-label" data-i18n="lkpi_cog">COG GeoTIFF Export</div>

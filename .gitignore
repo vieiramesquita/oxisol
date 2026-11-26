@@ -1,0 +1,59 @@
+# Build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Local oracle / validation data (strictly excluded from Git)
+oracle/
+runs/
+golden/
+*.nc
+*.ncdf
+*.v2
+*.100
+*.sch
+*.svf
+*.dat
+century_vemap_m4_820/
+century.util
+century.init
+!tests/fixtures/*.100
+!tests/fixtures/*.sch
+
+# Fortran/C legacy artifacts (never tracked in clean-room repo)
+*.f
+*.for
+*.f90
+*.inc
+*.c
+*.h
+*.o
+*.a
+
+# Agent / internal / sensitive files
+.agents/
+.agent/
+.claude/
+.cursor/
+skills/
+PROJECT_MEMORY.md
+PROJECT_DECISIONS.md
+HANDOFF_*.md
+.env
+.env.*
+*.pem
+*.key
+*.pth
+*.pt
+*.onnx
+*.ckpt
+*.safetensors
+paper/
+*.tex
+*.bib
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,20 @@
+[package]
+name = "century-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for running, validating, and benchmarking century-rs simulations."
+
+[[bin]]
+name = "century"
+path = "src/main.rs"
+
+[dependencies]
+century-core.workspace = true
+century-io.workspace = true
+century-grid.workspace = true
+clap.workspace = true
+serde.workspace = true
+wide.workspace = true

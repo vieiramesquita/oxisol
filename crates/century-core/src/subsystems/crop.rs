@@ -1,0 +1,353 @@
+//! Grassland and agricultural crop production (`potcrp`, `restrp`), root-to-shoot
+//! allocation, symbiotic N fixation, senescence, shoot/root death, and standing dead fall.
+//!
+//! Specification: `docs/spec/04_vegetation_crop_and_forest.md` §1.
+
+use crate::config::ElementMode;
+use crate::float::Float;
+use crate::ledger::{FlowLedger, PoolId};
+use crate::params::{CellDerivedParams, CropParams, FixParams, MAX_ELEM};
+use crate::state::{CellState, MonthlyWeather};
+use crate::subsystems::co2::Co2Effects;
+use crate::subsystems::decomposition::gpdf;
+use crate::subsystems::mineralization::partition_residue;
+
+/// Moisture growth response curve (`pprdwc`, Parton et al. 1993).
+#[inline]
+pub fn pprdwc<F: Float>(rel_water: F, pprpts: [F; 3]) -> F {
+    let f = F::from_f64;
+    let r = rel_water.clamp_val(F::ZERO, f(3.0));
+    let p2 = pprpts[1].max(f(0.1));
+    let p3 = pprpts[2].max(f(0.1));
+    let ratio = ((r - pprpts[0]) / p2).clamp_val(F::ZERO, F::ONE);
+    // Smooth saturating response: 1 / (1 + exp(-...)) or CENTURY parabolic curve.
+    let curve = F::ONE - (F::ONE - ratio).powf(F::ONE + p3);
+    curve.clamp_val(F::ZERO, F::ONE)
+}
+
+/// Root biomass impact factor on available nutrient uptake (`rtimp`).
+#[inline]
+pub fn root_impact<F: Float>(bglivc: F, fix: &FixParams<F>) -> F {
+    (F::ONE - fix.riint * (-fix.rictrl * bglivc).exp()).clamp_val(F::from_f64(0.1), F::ONE)
+}
+
+/// Execute monthly grassland/crop production, nutrient uptake, senescence, and litterfall.
+#[allow(clippy::too_many_arguments)]
+pub fn step_crop<F: Float>(
+    state: &mut CellState<F>,
+    derived: &CellDerivedParams<F>,
+    fix: &FixParams<F>,
+    crop: &CropParams<F>,
+    weather: &MonthlyWeather<F>,
+    liquid_input: F,
+    tree_lai: F,
+    co2: &Co2Effects<F>,
+    elements: ElementMode,
+    ledger: &mut FlowLedger<F>,
+) {
+    let f = F::from_f64;
+
+    // Update plant residue lignin from annual precipitation.
+    let ann_ppt = state.ann_ppt.max(f(1.0));
+    state.pltlig[0] = (crop.fligni[0][0] + crop.fligni[1][0] * ann_ppt).clamp_val(f(0.02), f(0.5));
+    state.pltlig[1] = (crop.fligni[0][1] + crop.fligni[1][1] * ann_ppt).clamp_val(f(0.02), f(0.5));
+
+    // --- 1. Potential & Actual Production (when growing season is active) ---
+    // Do not spontaneously generate grass in pure-forest cells with zero initial herbaceous C.
+    let has_herbaceous_seed = state.aglivc.total() > F::EPS_GUARD
+        || state.bglivc.total() > F::EPS_GUARD
+        || state.stdedc.total() > F::EPS_GUARD;
+    if state.crpgrw && has_herbaceous_seed {
+        let t_avg = (weather.tmin_c + weather.tmax_c) * f(0.5);
+        let t_fac = gpdf(
+            t_avg,
+            crop.ppdf[0],
+            crop.ppdf[1],
+            crop.ppdf[2],
+            crop.ppdf[3],
+        );
+        let rel_w = (state.avh2o[0] + liquid_input) / state.pet.max(f(0.1));
+        let w_fac = pprdwc(rel_w, fix.pprpts);
+
+        // Shading by standing dead litter and (in savannas) tree canopy LAI.
+        let dead_shade = (F::ONE - f(0.0008) * state.stdedc.total()).clamp_val(f(0.2), F::ONE);
+        let tree_shade = if tree_lai > F::ZERO {
+            (-f(0.35) * tree_lai).exp().clamp_val(f(0.05), F::ONE)
+        } else {
+            F::ONE
+        };
+
+        // Live biomass establishment curve.
+        let bio_fac = if crop.bioflg > f(0.5) && crop.fulcan > F::EPS_GUARD {
+            let b = state.aglivc.total();
+            if b < crop.fulcan {
+                (f(0.3) + f(0.7) * (b / crop.fulcan)).clamp_val(f(0.3), F::ONE)
+            } else {
+                F::ONE
+            }
+        } else {
+            F::ONE
+        };
+
+        // Root-to-shoot allocation.
+        let base_rs = if crop.frtc[0] > F::ZERO {
+            crop.frtc[0]
+        } else {
+            // Precipitation-driven natural grassland root:shoot ratio.
+            let ag_est = (fix.agppa + fix.agppb * ann_ppt).max(f(10.0));
+            let bg_est = (fix.bgppa + fix.bgppb * ann_ppt).max(f(10.0));
+            (bg_est / ag_est).clamp_val(f(0.3), f(3.5))
+        };
+        let rs_ratio = (base_rs * co2.crop_rs + state.fire_frtsh).clamp_val(f(0.1), f(5.0));
+        let f_root = rs_ratio / (F::ONE + rs_ratio);
+        let f_shoot = F::ONE - f_root;
+
+        let pot_ag = crop.prdx1 * t_fac * w_fac * dead_shade * tree_shade * bio_fac * co2.crop_prod;
+        let pot_total = if f_shoot > F::EPS_GUARD {
+            pot_ag / f_shoot
+        } else {
+            pot_ag
+        };
+
+        if pot_total > F::EPS_GUARD {
+            // --- 2. Nutrient Limitation (Liebig's Law, restrp) ---
+            let nelem = elements.nelem();
+            let rti = root_impact(state.bglivc.total(), fix);
+            let bio_frac = if crop.biomax > F::EPS_GUARD {
+                (state.aglivc.total() / crop.biomax).clamp_val(F::ZERO, F::ONE)
+            } else {
+                F::ONE
+            };
+
+            let mut c_limit = pot_total;
+            let mut r_min_ag = [F::ONE; MAX_ELEM];
+            let mut r_max_ag = [F::ONE; MAX_ELEM];
+            let mut r_min_bg = [F::ONE; MAX_ELEM];
+            let mut r_max_bg = [F::ONE; MAX_ELEM];
+            let mut e_avail = [F::ZERO; MAX_ELEM];
+
+            for e in 0..nelem {
+                let fav = match e {
+                    0 => fix.favail[0],
+                    1 => fix.favail[1].max(f(0.1)),
+                    _ => fix.favail[2].max(f(0.2)),
+                };
+                let soil_avail = state.mineral_sum(derived.nlaypg, e) * fav * rti;
+                e_avail[e] = soil_avail + state.crpstg[e];
+
+                r_min_ag[e] = (crop.pramn[e][0] + bio_frac * (crop.pramn[e][1] - crop.pramn[e][0]))
+                    * co2.crop_ce[0][e];
+                r_max_ag[e] = (crop.pramx[e][0] + bio_frac * (crop.pramx[e][1] - crop.pramx[e][0]))
+                    * co2.crop_ce[1][e];
+                r_min_bg[e] =
+                    (crop.prbmn[e][0] + ann_ppt * crop.prbmn[e][1]).max(f(5.0)) * co2.crop_ce[0][e];
+                r_max_bg[e] = (crop.prbmx[e][0] + ann_ppt * crop.prbmx[e][1]).max(r_min_bg[e])
+                    * co2.crop_ce[1][e];
+
+                // Minimum nutrient required per unit total C (at widest allowed C:E).
+                let min_e_per_c =
+                    f_shoot / r_max_ag[e].max(f(1.0)) + f_root / r_max_bg[e].max(f(1.0));
+                if min_e_per_c > F::EPS_GUARD {
+                    // Symbiotic N fixation adds extra N supply for N-fixing crops (e == 0).
+                    let sym_bonus = if e == 0 && crop.snfxmx > F::ZERO {
+                        crop.snfxmx * pot_total
+                    } else {
+                        F::ZERO
+                    };
+                    let max_c_e = (e_avail[e] + sym_bonus) / min_e_per_c;
+                    if max_c_e < c_limit {
+                        c_limit = max_c_e;
+                    }
+                }
+            }
+
+            let actual_c = c_limit.clamp_val(F::ZERO, pot_total);
+            if actual_c > F::EPS_GUARD {
+                let c_ag = actual_c * f_shoot;
+                let c_bg = actual_c * f_root;
+                ledger.schedule(PoolId::AtmosphereC, PoolId::AglivC, c_ag);
+                ledger.schedule(PoolId::AtmosphereC, PoolId::BglivC, c_bg);
+                state.month_crop_npp += actual_c;
+                state.month_npp += actual_c;
+
+                // Uptake nutrients for shoots and roots.
+                for e in 0..nelem {
+                    let e_min_ag = c_ag / r_max_ag[e].max(f(1.0));
+                    let e_max_ag = c_ag / r_min_ag[e].max(f(1.0));
+                    let e_min_bg = c_bg / r_max_bg[e].max(f(1.0));
+                    let e_max_bg = c_bg / r_min_bg[e].max(f(1.0));
+
+                    let e_min_tot = e_min_ag + e_min_bg;
+                    let e_max_tot = e_max_ag + e_max_bg;
+                    let target_tot = e_avail[e].clamp_val(e_min_tot, e_max_tot);
+
+                    // Draw from crop storage first, then root-zone mineral layers, then symbiotic N fixation.
+                    let from_stg = target_tot.min(state.crpstg[e]);
+                    let rem1 = (target_tot - from_stg).max(F::ZERO);
+                    let soil_tot = state.mineral_sum(derived.nlaypg, e);
+                    let from_soil = rem1.min(soil_tot);
+                    let rem2 = (rem1 - from_soil).max(F::ZERO);
+                    let from_sym = if e == 0 && crop.snfxmx > F::ZERO {
+                        rem2.min(crop.snfxmx * actual_c)
+                    } else {
+                        F::ZERO
+                    };
+
+                    let actual_e_tot = from_stg + from_soil + from_sym;
+                    if actual_e_tot > F::EPS_GUARD {
+                        let ag_share = if (e_max_ag + e_max_bg) > F::EPS_GUARD {
+                            (e_max_ag / (e_max_ag + e_max_bg)).clamp_val(F::ZERO, F::ONE)
+                        } else {
+                            f_shoot
+                        };
+                        let bg_share = F::ONE - ag_share;
+
+                        if from_stg > F::ZERO {
+                            ledger.schedule(
+                                PoolId::CrpStg(e),
+                                PoolId::AglivE(e),
+                                from_stg * ag_share,
+                            );
+                            ledger.schedule(
+                                PoolId::CrpStg(e),
+                                PoolId::BglivE(e),
+                                from_stg * bg_share,
+                            );
+                        }
+                        if from_soil > F::ZERO && soil_tot > F::EPS_GUARD {
+                            for l in 0..derived.nlaypg {
+                                let take_l = (from_soil * (state.minerl[l][e] / soil_tot))
+                                    .min(state.minerl[l][e]);
+                                if take_l > F::ZERO {
+                                    ledger.schedule(
+                                        PoolId::Minerl(l, e),
+                                        PoolId::AglivE(e),
+                                        take_l * ag_share,
+                                    );
+                                    ledger.schedule(
+                                        PoolId::Minerl(l, e),
+                                        PoolId::BglivE(e),
+                                        take_l * bg_share,
+                                    );
+                                }
+                            }
+                        }
+                        if from_sym > F::ZERO {
+                            ledger.schedule(
+                                PoolId::AtmosphereE(0),
+                                PoolId::AglivE(0),
+                                from_sym * ag_share,
+                            );
+                            ledger.schedule(
+                                PoolId::AtmosphereE(0),
+                                PoolId::BglivE(0),
+                                from_sym * bg_share,
+                            );
+                            state.month_n_fix += from_sym;
+                        }
+                    }
+                }
+            }
+        }
+        ledger.commit(state);
+    }
+
+    // --- 3. Shoot Death (dshoot): aglivc -> stdedc ---
+    let agc = state.aglivc.total();
+    if agc > F::EPS_GUARD {
+        let death_frac = if state.senm {
+            crop.fsdeth[1].clamp_val(F::ZERO, f(0.99))
+        } else {
+            let prof_rel = if derived.twhc_profile > F::EPS_GUARD {
+                (state.avh2o[1] / derived.twhc_profile).clamp_val(F::ZERO, F::ONE)
+            } else {
+                F::ONE
+            };
+            let drought_death = crop.fsdeth[0] * (F::ONE - prof_rel).powf(F::TWO);
+            let shade_death = if agc > crop.fsdeth[3] {
+                crop.fsdeth[2]
+            } else {
+                F::ZERO
+            };
+            (drought_death + shade_death).clamp_val(F::ZERO, f(0.95))
+        };
+        if death_frac > F::ZERO {
+            let c_dead = agc * death_frac;
+            ledger.schedule(PoolId::AglivC, PoolId::StdedC, c_dead);
+            for e in 0..elements.nelem() {
+                let e_dead = state.aglive[e] * death_frac;
+                let retrans = e_dead * crop.crprtf[e].clamp_val(F::ZERO, f(0.8));
+                let mut to_stded = e_dead - retrans;
+                if retrans > F::ZERO {
+                    ledger.schedule(PoolId::AglivE(e), PoolId::CrpStg(e), retrans);
+                }
+                // Plant senescence N volatilization (`volpl` via `vlossp`, Manual p. 145).
+                if e == 0 && crop.vlossp > F::ZERO && to_stded > F::ZERO {
+                    let vol = to_stded * crop.vlossp.clamp_val(F::ZERO, f(0.5));
+                    ledger.schedule(PoolId::AglivE(0), PoolId::AtmosphereE(0), vol);
+                    state.month_n_volat += vol;
+                    to_stded = (to_stded - vol).max(F::ZERO);
+                }
+                if to_stded > F::ZERO {
+                    ledger.schedule(PoolId::AglivE(e), PoolId::StdedE(e), to_stded);
+                }
+            }
+        }
+    }
+    ledger.commit(state);
+
+    // --- 4. Standing Dead Fall (falstd): stdedc -> surface litter ---
+    let sdc = state.stdedc.total();
+    if sdc > F::EPS_GUARD && crop.fallrt > F::ZERO {
+        let fall_f = crop.fallrt.clamp_val(F::ZERO, f(0.95));
+        let c_fall = sdc * fall_f;
+        let mut e_fall = [F::ZERO; MAX_ELEM];
+        for e in 0..elements.nelem() {
+            e_fall[e] = state.stdede[e] * fall_f;
+        }
+        partition_residue(
+            state,
+            fix,
+            0,
+            PoolId::StdedC,
+            [PoolId::StdedE(0), PoolId::StdedE(1), PoolId::StdedE(2)],
+            c_fall,
+            e_fall,
+            state.pltlig[0],
+            None,
+            elements,
+            ledger,
+        );
+    }
+    ledger.commit(state);
+
+    // --- 5. Root Death (droot): bglivc -> soil litter ---
+    let bgc = state.bglivc.total();
+    if bgc > F::EPS_GUARD && state.stemp > crop.rtdtmp && crop.rdr > F::ZERO {
+        let root_rel = if derived.twhc_root > F::EPS_GUARD {
+            (state.avh2o[0] / derived.twhc_root).clamp_val(F::ZERO, F::ONE)
+        } else {
+            F::ONE
+        };
+        let rdeath_f = (crop.rdr * (F::ONE - f(0.5) * root_rel)).clamp_val(F::ZERO, f(0.95));
+        let c_rdead = bgc * rdeath_f;
+        let mut e_rdead = [F::ZERO; MAX_ELEM];
+        for e in 0..elements.nelem() {
+            e_rdead[e] = state.bglive[e] * rdeath_f;
+        }
+        partition_residue(
+            state,
+            fix,
+            1,
+            PoolId::BglivC,
+            [PoolId::BglivE(0), PoolId::BglivE(1), PoolId::BglivE(2)],
+            c_rdead,
+            e_rdead,
+            state.pltlig[1],
+            None,
+            elements,
+            ledger,
+        );
+    }
+    ledger.commit(state);
+}

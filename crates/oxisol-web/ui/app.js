@@ -101,6 +101,12 @@ const I18N = {
     lulc_trans: "Transient (yr)",
     lulc_dt: "Warming Shift (ΔT)",
     lulc_pscale: "Rainfall Factor",
+    lulc_res_lbl: "Modeling Resolution",
+    lulc_res_native: "Native (Raster)",
+    lulc_hw_lbl: "Compute Profile",
+    lulc_hw_max: "Max Performance (All Cores)",
+    lulc_hw_lap: "Laptop Quiet (50% Cores)",
+    lulc_filter_lbl: "Filter Classes (opt. e.g. 15 = Pasture, or 3,4,15)",
     lulc_till: "Cropland Tillage Practice",
     lulc_export_dir: "Export Cloud-Optimized GeoTIFFs to Dir (optional)",
     btn_run_lulc: "Run Spatial LULC Simulation",
@@ -216,6 +222,12 @@ const I18N = {
     lulc_trans: "Transiente (anos)",
     lulc_dt: "Aquecimento (ΔT)",
     lulc_pscale: "Fator de Chuva",
+    lulc_res_lbl: "Resolução de Modelagem",
+    lulc_res_native: "Nativa (do Raster)",
+    lulc_hw_lbl: "Perfil de Hardware",
+    lulc_hw_max: "Desempenho Máximo (Todos Núcleos)",
+    lulc_hw_lap: "Notebook Silencioso (50% Núcleos)",
+    lulc_filter_lbl: "Filtrar Classes (opc. ex.: 15 = Pastagem, ou 3,4,15)",
     lulc_till: "Preparo na Lavoura",
     lulc_export_dir: "Exportar GeoTIFFs COG na pasta (opcional)",
     btn_run_lulc: "Rodar Simulação Espacial LULC",
@@ -249,7 +261,18 @@ const state = {
   lulcPixelMap: new Map()
 };
 
-const CARBON_LAYERS = new Set(["somsc", "som3c", "rlwodc", "npp", "somsc_final", "delta_somsc", "biomass_c"]);
+const CARBON_LAYERS = new Set([
+  "somsc",
+  "som3c",
+  "rlwodc",
+  "npp",
+  "somsc_final",
+  "somsc_0_30",
+  "somsc_0_100",
+  "delta_somsc",
+  "delta_somsc_0_30",
+  "biomass_c"
+]);
 const CO2E_FACTOR = 44.0 / 12.0;
 
 function cScale(val) {
@@ -293,8 +316,11 @@ function syncUnitLabels() {
   const lulcSel = $("lulc-layer");
   if (lulcSel) {
     const labels = {
-      delta_somsc: `ΔSOMSC — Carbon Gain / Loss (${u})`,
-      somsc_final: `Final SOMSC (${u})`,
+      delta_somsc: `ΔSOMSC 0–20 cm (${u})`,
+      delta_somsc_0_30: `ΔSOMSC 0–30 cm IPCC (${u})`,
+      somsc_final: `Final SOMSC 0–20 cm (${u})`,
+      somsc_0_30: `Final SOMSC 0–30 cm IPCC (${u})`,
+      somsc_0_100: `Final SOMSC 0–100 cm Deep (${u})`,
       biomass_c: `Live Biomass C (${u})`,
       npp: `Annual NPP (${fu})`
     };
@@ -860,10 +886,11 @@ function renderPoolDiagram(pools, co2End) {
     <text x="532" y="199" text-anchor="middle" fill="#a78bfa" font-size="10.5" font-weight="700">SOM3 PASSIVE</text>
     <text x="532" y="221" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700" font-family="monospace">${fmt(cScale(pools.som3_c), dStock)} ${u}</text>
 
-    <!-- Mineral N / P / S -->
-    <rect x="28" y="192" width="362" height="44" rx="9" fill="#101c28" stroke="#06b6d4" stroke-width="1.4"/>
-    <text x="209" y="210" text-anchor="middle" fill="#06b6d4" font-size="10.5" font-weight="700">PROFILE MINERAL NUTRIENTS (g/m²)</text>
-    <text x="209" y="228" text-anchor="middle" fill="#e6edf3" font-size="12" font-family="monospace">N: ${fmt(pools.profile_minerl_n, 2)}  ·  P: ${fmt(pools.profile_minerl_p, 2)}  ·  S: ${fmt(pools.profile_minerl_s, 2)}</text>
+    <!-- Multi-Depth Profile (0-20 / 0-30 IPCC / 0-100 Deep) & Mineral N/P/S -->
+    <rect x="28" y="182" width="362" height="58" rx="9" fill="#101c28" stroke="#06b6d4" stroke-width="1.4"/>
+    <text x="209" y="199" text-anchor="middle" fill="#06b6d4" font-size="10" font-weight="700">MULTI-DEPTH PROFILE (${u}) · MINERAL N/P/S</text>
+    <text x="209" y="216" text-anchor="middle" fill="#10b981" font-size="11.5" font-weight="700" font-family="monospace">0–20cm: ${fmt(cScale(pools.somsc), dStock)} · IPCC 0–30: ${fmt(cScale(pools.depth_profile ? pools.depth_profile.somsc_0_30 : pools.somsc), dStock)} · Deep 0–100: ${fmt(cScale(pools.depth_profile ? pools.depth_profile.somsc_0_100 : pools.somsc), dStock)}</text>
+    <text x="209" y="232" text-anchor="middle" fill="#94a3b8" font-size="10.5" font-family="monospace">Mineral (g/m²) — N: ${fmt(pools.profile_minerl_n, 2)} · P: ${fmt(pools.profile_minerl_p, 2)} · S: ${fmt(pools.profile_minerl_s, 2)}</text>
   </svg>`;
 }
 
@@ -894,18 +921,28 @@ function renderSimulation(sim) {
   const x = sim.series.map((p) => p.year);
   const baseMatch = state.baselineSim && state.baselineSim.series.length === sim.series.length;
 
+  const depthMode = ($("som-depth-mode") && $("som-depth-mode").value) || "deep";
+  const somSeries = depthMode === "classic"
+    ? [
+        { label: "Total SOMSC (0–20)", color: "#10b981", width: 2.5, data: sim.series.map((p) => cScale(p.somsc)) },
+        { label: "SOM2 Slow", color: "#f59e0b", width: 1.9, data: sim.series.map((p) => cScale(p.som2c)) },
+        { label: "SOM3 Passive", color: "#8b5cf6", width: 1.9, data: sim.series.map((p) => cScale(p.som3c)) },
+        { label: "SOM1 Active", color: "#06b6d4", width: 1.5, data: sim.series.map((p) => cScale(p.som1c)) }
+      ]
+    : [
+        { label: "Deep 0–100 cm", color: "#8b5cf6", width: 2.5, data: sim.series.map((p) => cScale(p.somsc_0_100 || p.somsc)) },
+        { label: "IPCC 0–30 cm", color: "#06b6d4", width: 2.2, data: sim.series.map((p) => cScale(p.somsc_0_30 || p.somsc)) },
+        { label: "Classic 0–20 cm", color: "#10b981", width: 2.0, data: sim.series.map((p) => cScale(p.somsc)) },
+        { label: "SOM2 Slow (0–20)", color: "#f59e0b", width: 1.5, data: sim.series.map((p) => cScale(p.som2c)) }
+      ];
+
   renderLineChart(
     "chart-som",
     "legend-som",
-    [
-      { label: "Total SOMSC", color: "#10b981", width: 2.5, data: sim.series.map((p) => cScale(p.somsc)) },
-      { label: "SOM2 Slow", color: "#f59e0b", width: 1.9, data: sim.series.map((p) => cScale(p.som2c)) },
-      { label: "SOM3 Passive", color: "#8b5cf6", width: 1.9, data: sim.series.map((p) => cScale(p.som3c)) },
-      { label: "SOM1 Active", color: "#06b6d4", width: 1.5, data: sim.series.map((p) => cScale(p.som1c)) }
-    ],
+    somSeries,
     x,
     baseMatch
-      ? [{ label: "Baseline SOMSC (A)", color: "#e6edf3", dashed: true, data: state.baselineSim.series.map((p) => cScale(p.somsc)) }]
+      ? [{ label: "Baseline SOMSC (A)", color: "#e6edf3", dashed: true, data: state.baselineSim.series.map((p) => cScale(depthMode === "deep" ? (p.somsc_0_30 || p.somsc) : p.somsc)) }]
       : []
   );
 
@@ -1159,7 +1196,7 @@ function drawLulcMap() {
   const cellW = cw / res.cols;
   const cellH = ch / res.rows;
   const isCategorical = layer === "lulc_initial" || layer === "lulc_final";
-  const isDiverging = layer === "delta_somsc";
+  const isDiverging = layer === "delta_somsc" || layer === "delta_somsc_0_30";
 
   const colorMap = new Map(res.legend.map((c) => [c.code, c.color]));
   const cbWrap = $("lulc-cb-wrap");
@@ -1177,13 +1214,13 @@ function drawLulcMap() {
   cbWrap.style.display = "flex";
   if (isDiverging) {
     let maxAbs = 10;
-    for (const p of res.pixels) maxAbs = Math.max(maxAbs, Math.abs(p.delta_somsc));
+    for (const p of res.pixels) maxAbs = Math.max(maxAbs, Math.abs(Number(p[layer])));
     cbBar.style.background = "linear-gradient(90deg, #f43f5e, #1e293b, #10b981)";
     const dDig = state.carbonUnit === "mgha" ? 1 : 0;
     $("lcb-min").textContent = `-${fmt(cScale(maxAbs), dDig)} ${cUnit()}`;
     $("lcb-max").textContent = `+${fmt(cScale(maxAbs), dDig)} ${cUnit()}`;
     for (const p of res.pixels) {
-      ctx.fillStyle = divergingColor(p.delta_somsc, maxAbs);
+      ctx.fillStyle = divergingColor(Number(p[layer]), maxAbs);
       ctx.fillRect(p.col * cellW, p.row * cellH, Math.ceil(cellW), Math.ceil(cellH));
     }
   } else {
@@ -1224,8 +1261,10 @@ function inspectLulcPixel(p) {
     ["LULC Initial", labelOf(p.lulc_initial)],
     ["LULC Final", labelOf(p.lulc_final)],
     ["SOMSC Initial", `${fmt(cScale(p.somsc_initial), dStock)} ${u}`],
-    ["SOMSC Final", `${fmt(cScale(p.somsc_final), dStock)} ${u}`],
-    ["ΔSOMSC", `${dSign}${fmt(cScale(p.delta_somsc), dStock)} ${u} (${dSign}${fmt(co2e, 2)} t CO₂e/ha)`],
+    ["SOMSC 0–20 cm (Final)", `${fmt(cScale(p.somsc_final), dStock)} ${u}`],
+    ["SOMSC 0–30 cm (IPCC)", `${fmt(cScale(p.somsc_0_30 || p.somsc_final), dStock)} ${u}`],
+    ["SOMSC 0–100 cm (Deep)", `${fmt(cScale(p.somsc_0_100 || p.somsc_final), dStock)} ${u}`],
+    ["ΔSOMSC 0–20 cm", `${dSign}${fmt(cScale(p.delta_somsc), dStock)} ${u} (${dSign}${fmt(co2e, 2)} t CO₂e/ha)`],
     ["Live Biomass C", `${fmt(cScale(p.biomass_c), dStock)} ${u}`],
     ["Annual NPP", `${fmt(cScale(p.npp), dStock)} ${fu}`],
     ["Annual AET", `${fmt(p.aet, 1)} cm/yr`],
@@ -1240,7 +1279,9 @@ function renderLulcSummary(data) {
   $("lkpi-time").textContent = `${fmt(data.elapsed_secs, 2)} s`;
   $("lkpi-rate").textContent = `${fmt(data.pixel_years_per_sec, 0)} pixel-yr/s (${data.threads_used}T)`;
   $("lkpi-som").textContent = fmt(cScale(data.mean_somsc), cDigits(false));
-  $("lkpi-som-unit").textContent = cUnit();
+  const ipcc30 = data.mean_somsc_0_30 ? fmt(cScale(data.mean_somsc_0_30), cDigits(false)) : "—";
+  const deep100 = data.mean_somsc_0_100 ? fmt(cScale(data.mean_somsc_0_100), cDigits(false)) : "—";
+  $("lkpi-som-unit").textContent = `${cUnit()} · 30cm: ${ipcc30} · 1m: ${deep100}`;
   const dSign = data.mean_delta_somsc >= 0 ? "+" : "";
   const dEl = $("lkpi-delta");
   dEl.textContent = `${dSign}${fmt(cScale(data.mean_delta_somsc), state.carbonUnit === "mgha" ? 2 : 1)}`;
@@ -1269,6 +1310,19 @@ async function runLulcSimulation() {
       const v = ($(id).value || "").trim();
       return v.length ? v : null;
     };
+    const resVal = Number($("lulc-res").value || 0);
+    const onlyClasses = ($("lulc-only-classes").value || "")
+      .split(/[\s,;]+/)
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isInteger(n) && n > 0);
+    const hwChoice = $("lulc-threads").value || "auto";
+    const maxCpus = state.system ? state.system.logical_cpus : 4;
+    const threads = hwChoice === "auto"
+      ? maxCpus
+      : hwChoice === "laptop"
+        ? Math.max(1, Math.floor(maxCpus / 2))
+        : Number(hwChoice);
+
     const req = {
       mode,
       scheme_id: $("lulc-scheme").value || "mapbiomas_br",
@@ -1292,7 +1346,12 @@ async function runLulcSimulation() {
       temp_delta_c: Number($("lulc-dt").value),
       precip_scale: Number($("lulc-pscale").value) / 100.0,
       cropland_tillage: $("lulc-till").value,
-      threads: state.system ? state.system.logical_cpus : null,
+      target_resolution_m: resVal > 0 ? resVal : null,
+      only_classes: onlyClasses,
+      output_unit: state.carbonUnit,
+      tile_rows: 64,
+      max_preview_pixels: 40000,
+      threads,
       export_cog_dir: optStr("lulc-export-dir")
     };
     const resp = await fetch("/api/lulc/run", {
@@ -1348,6 +1407,11 @@ async function init() {
     loadPresetIntoControls(e.target.value);
     runSimulation();
   });
+  if ($("som-depth-mode")) {
+    $("som-depth-mode").addEventListener("change", () => {
+      if (state.lastSim) renderSimulation(state.lastSim);
+    });
+  }
 
   $("btn-run").addEventListener("click", runSimulation);
   $("btn-pin").addEventListener("click", () => {

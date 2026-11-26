@@ -3,6 +3,7 @@
 pub mod co2;
 pub mod crop;
 pub mod decomposition;
+pub mod deep_som;
 pub mod forest;
 pub mod hydrology;
 pub mod management;

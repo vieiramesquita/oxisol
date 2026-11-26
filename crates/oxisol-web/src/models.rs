@@ -157,8 +157,14 @@ pub struct AnnualPoint {
     pub som2c: f64,
     /// Passive SOM carbon ($\text{g C}\cdot\text{m}^{-2}$).
     pub som3c: f64,
-    /// Total soil organic matter carbon (`som1c_soil + som2c + som3c`, $\text{g C}\cdot\text{m}^{-2}$).
+    /// Total soil organic matter carbon (`0–20 cm` classic CENTURY, $\text{g C}\cdot\text{m}^{-2}$).
     pub somsc: f64,
+    /// Cumulative **IPCC `0–30 cm`** soil organic carbon ($\text{g C}\cdot\text{m}^{-2}$).
+    #[serde(default)]
+    pub somsc_0_30: f64,
+    /// Cumulative **deep `0–100 cm`** soil organic carbon ($\text{g C}\cdot\text{m}^{-2}$).
+    #[serde(default)]
+    pub somsc_0_100: f64,
     /// Aboveground herbaceous live carbon ($\text{g C}\cdot\text{m}^{-2}$).
     pub aglivc: f64,
     /// Belowground herbaceous root carbon ($\text{g C}\cdot\text{m}^{-2}$).
@@ -202,8 +208,11 @@ pub struct PoolSnapshot {
     pub som2_c: f64,
     /// Passive SOM carbon ($\text{g C}\cdot\text{m}^{-2}$).
     pub som3_c: f64,
-    /// Total soil organic carbon (`somsc`, $\text{g C}\cdot\text{m}^{-2}$).
+    /// Total soil organic carbon (`0–20 cm` classic CENTURY, $\text{g C}\cdot\text{m}^{-2}$).
     pub somsc: f64,
+    /// Vertically resolved multi-depth SOC breakdown (`0–20`, `20–30`, `30–60`, `60–100 cm`, `0–30`, `0–100 cm`).
+    #[serde(default)]
+    pub depth_profile: oxisol_core::DepthSomSummary,
     /// Total soil organic nitrogen ($\text{g N}\cdot\text{m}^{-2}$).
     pub som_n: f64,
     /// Total mineral N across soil profile ($\text{g N}\cdot\text{m}^{-2}$).
@@ -299,7 +308,7 @@ pub struct GridCellSummary {
     pub col: usize,
     /// Biome identifier.
     pub biome_id: i32,
-    /// Total soil organic carbon (`somsc`, $\text{g C}\cdot\text{m}^{-2}$).
+    /// Total soil organic carbon (`0–20 cm` classic CENTURY, $\text{g C}\cdot\text{m}^{-2}$).
     pub somsc: f64,
     /// Passive SOM carbon (`som3c`, $\text{g C}\cdot\text{m}^{-2}$).
     pub som3c: f64,

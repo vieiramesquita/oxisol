@@ -250,7 +250,13 @@
             <div class="card chart-card">
               <div class="card-head">
                 <h4 id="chart-som-head" data-i18n="chart_som_title">Soil Organic Carbon Pools (Mg C/ha)</h4>
-                <div class="legend" id="legend-som"></div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <select id="som-depth-mode" class="input-select compact" style="font-size:11px;padding:2px 7px;">
+                    <option value="deep">0–20 / 0–30 IPCC / 0–100 cm</option>
+                    <option value="classic">0–20 cm Pools (SOM1/2/3)</option>
+                  </select>
+                  <div class="legend" id="legend-som"></div>
+                </div>
               </div>
               <div id="chart-som" class="chart-host"></div>
             </div>
@@ -514,6 +520,31 @@
                 <input id="lulc-co2-end" type="number" class="input-num" min="180" max="1500" value="422" />
               </div>
             </div>
+            <div class="ctrl-grid-2">
+              <div>
+                <label class="small-lbl" data-i18n="lulc_res_lbl">Modeling Resolution</label>
+                <select id="lulc-res" class="input-select">
+                  <option value="0" data-i18n="lulc_res_native">Native (Raster)</option>
+                  <option value="250">250 m</option>
+                  <option value="1000">1 km (Laptop fast)</option>
+                  <option value="5000">5 km (Regional)</option>
+                  <option value="10000">10 km (Continental)</option>
+                </select>
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="lulc_hw_lbl">Compute Profile</label>
+                <select id="lulc-threads" class="input-select">
+                  <option value="auto" data-i18n="lulc_hw_max">Max Performance (All Cores)</option>
+                  <option value="laptop" data-i18n="lulc_hw_lap">Laptop Quiet (50% Cores)</option>
+                  <option value="2">2 Threads</option>
+                  <option value="4">4 Threads</option>
+                </select>
+              </div>
+            </div>
+            <div class="ctrl-row">
+              <label class="small-lbl" data-i18n="lulc_filter_lbl">Filter Classes (opt. e.g. 15 = Pasture, or 3,4,15)</label>
+              <input id="lulc-only-classes" type="text" class="input-num" placeholder="All classes (or 15 for Pasture only)" />
+            </div>
             <div class="ctrl-row">
               <label class="small-lbl" data-i18n="lulc_till">Cropland Tillage Practice</label>
               <select id="lulc-till" class="input-select">
@@ -574,12 +605,15 @@
               <h4 data-i18n="lulc_map_title">Georeferenced LULC &amp; Soil Carbon Map (EPSG:4326)</h4>
               <div class="map-toolbar">
                 <select id="lulc-layer" class="input-select compact">
-                  <option value="delta_somsc">ΔSOMSC — Carbon Gain / Loss (g C/m²)</option>
+                  <option value="delta_somsc">ΔSOMSC 0–20 cm (Mg C/ha)</option>
+                  <option value="delta_somsc_0_30">ΔSOMSC 0–30 cm IPCC (Mg C/ha)</option>
                   <option value="lulc_initial">LULC Initial (MapBiomas / ESA)</option>
                   <option value="lulc_final">LULC Final (Post-Conversion)</option>
-                  <option value="somsc_final">Final SOMSC (g C/m²)</option>
-                  <option value="biomass_c">Live Biomass C (g C/m²)</option>
-                  <option value="npp">Annual NPP (g C/m²/yr)</option>
+                  <option value="somsc_final">Final SOMSC 0–20 cm (Mg C/ha)</option>
+                  <option value="somsc_0_30">Final SOMSC 0–30 cm IPCC (Mg C/ha)</option>
+                  <option value="somsc_0_100">Final SOMSC 0–100 cm Deep (Mg C/ha)</option>
+                  <option value="biomass_c">Live Biomass C (Mg C/ha)</option>
+                  <option value="npp">Annual NPP (Mg C/ha/yr)</option>
                   <option value="aet">Annual AET (cm/yr)</option>
                   <option value="minerl_n">Surface Mineral N (g N/m²)</option>
                 </select>

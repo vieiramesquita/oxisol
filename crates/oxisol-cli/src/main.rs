@@ -111,6 +111,7 @@ struct RunArgs {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Run a spatial grid simulation (VEMAP or custom grid directory, spinup or transient).
     Run(Box<RunArgs>),
@@ -183,6 +184,12 @@ enum Commands {
         /// Multi-band monthly maximum temperature GeoTIFF/NetCDF.
         #[arg(long)]
         tmax: Option<String>,
+        /// Precipitation raster unit (`mm`, `cm`, `meters`).
+        #[arg(long, default_value = "mm")]
+        precip_unit: String,
+        /// Temperature raster unit (`celsius`, `kelvin`, `celsius_x10`).
+        #[arg(long, default_value = "celsius")]
+        temp_unit: String,
         /// Optional SoilGrids/soil sand GeoTIFF.
         #[arg(long)]
         sand: Option<String>,
@@ -195,6 +202,18 @@ enum Commands {
         /// Optional soil pH GeoTIFF.
         #[arg(long)]
         ph: Option<String>,
+        /// Target modeling resolution in meters (e.g. `250`, `1000`, `5000`; omit for native).
+        #[arg(long)]
+        resolution_m: Option<f64>,
+        /// Optional comma-separated LULC class codes to simulate (e.g. `15` for Pasture only, or `3,4,15`).
+        #[arg(long, value_delimiter = ',')]
+        only_classes: Vec<i32>,
+        /// Exported COG carbon unit (`mgha` = Mg C/ha default, or `gm2` = g C/m²).
+        #[arg(long, default_value = "mgha")]
+        unit: String,
+        /// Row strip height for memory-bounded tiled execution (default `64`; tune down for laptops, up for HPC).
+        #[arg(long, default_value_t = 64)]
+        tile_rows: usize,
         /// Spinup years on initial LULC class (default 80).
         #[arg(long, default_value_t = 80)]
         spinup_years: i32,
@@ -689,10 +708,16 @@ fn main() -> ExitCode {
             precip,
             tmin,
             tmax,
+            precip_unit,
+            temp_unit,
             sand,
             clay,
             bulkd,
             ph,
+            resolution_m,
+            only_classes,
+            unit,
+            tile_rows,
             spinup_years,
             years,
             co2_start,
@@ -705,6 +730,16 @@ fn main() -> ExitCode {
             } else {
                 "geotiff".to_string()
             };
+            let p_unit = match precip_unit.to_ascii_lowercase().as_str() {
+                "cm" => oxisol_web::lulc::PrecipUnit::Cm,
+                "m" | "meters" => oxisol_web::lulc::PrecipUnit::Meters,
+                _ => oxisol_web::lulc::PrecipUnit::Mm,
+            };
+            let t_unit = match temp_unit.to_ascii_lowercase().as_str() {
+                "k" | "kelvin" => oxisol_web::lulc::TempUnit::Kelvin,
+                "cx10" | "celsius_x10" | "x10" => oxisol_web::lulc::TempUnit::CelsiusX10,
+                _ => oxisol_web::lulc::TempUnit::Celsius,
+            };
             let req = oxisol_web::lulc::LulcRunRequest {
                 mode,
                 scheme_id: scheme,
@@ -713,8 +748,8 @@ fn main() -> ExitCode {
                 precip_path: precip,
                 tmin_path: tmin,
                 tmax_path: tmax,
-                precip_unit: oxisol_web::lulc::PrecipUnit::Mm,
-                temp_unit: oxisol_web::lulc::TempUnit::Celsius,
+                precip_unit: p_unit,
+                temp_unit: t_unit,
                 sand_path: sand,
                 clay_path: clay,
                 bulkd_path: bulkd,
@@ -728,22 +763,37 @@ fn main() -> ExitCode {
                 temp_delta_c: 0.0,
                 precip_scale: 1.0,
                 cropland_tillage: oxisol_web::models::TillageMode::NoTillHarvest,
+                target_resolution_m: resolution_m,
+                only_classes,
+                output_unit: unit,
+                tile_rows: Some(tile_rows),
+                max_preview_pixels: Some(0), // Headless CLI does not need JSON preview array
                 threads,
                 export_cog_dir: Some(out_dir),
             };
             match oxisol_web::lulc::execute_lulc_run(&req) {
                 Ok(res) => {
                     println!(
-                        "Completed {} ({} active pixels, {} converted) in {:.2}s ({:.0} pixel-yr/s)",
+                        "Completed {} ({} active pixels, {} converted, {:.0} m, {} threads) in {:.2}s ({:.0} pixel-yr/s)",
                         res.source_label,
                         res.n_active,
                         res.n_converted,
+                        res.resolution_m,
+                        res.threads_used,
                         res.elapsed_secs,
                         res.pixel_years_per_sec
                     );
                     println!(
-                        "Mean final SOMSC = {:.1} g C/m2 | Mean delta SOMSC = {:+.1} g C/m2 ({:+.2} t C/ha)",
-                        res.mean_somsc, res.mean_delta_somsc, res.mean_delta_t_c_ha
+                        "Mean final SOMSC: 0-20cm = {:.2} Mg C/ha | 0-30cm (IPCC) = {:.2} Mg C/ha | 0-100cm (Deep) = {:.2} Mg C/ha",
+                        res.mean_somsc / 100.0,
+                        res.mean_somsc_0_30 / 100.0,
+                        res.mean_somsc_0_100 / 100.0
+                    );
+                    println!(
+                        "Mean delta SOMSC (0-20cm) = {:+.2} Mg C/ha ({:+.2} t CO2e/ha) | COG unit: {}",
+                        res.mean_delta_t_c_ha,
+                        res.mean_delta_t_c_ha * (44.0 / 12.0),
+                        res.cog_unit
                     );
                     for p in &res.exported_cogs {
                         println!("  Wrote COG: {p}");

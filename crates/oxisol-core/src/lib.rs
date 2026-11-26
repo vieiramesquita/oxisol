@@ -45,6 +45,10 @@ pub use step::{
     initialize_cell, run_cell_from_state, run_cell_from_state_compiled, run_cell_simulation,
     run_cell_simulation_compiled, step_month, step_year,
 };
+pub use subsystems::deep_som::{
+    DeepSomProfile, DepthSomSummary, RootDepthProfile, SubsoilHorizon, SUBSOIL_BOUNDS_CM,
+    SUBSOIL_HORIZONS,
+};
 pub use subsystems::scheduler::{
     CompiledBlock, CompiledSchedule, EventKind, ResolvedMonthEvents, Schedule, ScheduleBlock,
     ScheduledEvent,

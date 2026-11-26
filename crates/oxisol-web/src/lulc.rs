@@ -160,6 +160,25 @@ pub struct LulcRunRequest {
     /// Tillage regime applied to cropland classes (`no_till_harvest` vs `moldboard_plow`).
     #[serde(default = "default_plow")]
     pub cropland_tillage: TillageMode,
+    /// Optional target spatial modeling resolution in meters (e.g. `250.0`, `1000.0`, `5000.0`).
+    /// When coarser than native pixel size, LULC is aggregated via majority-mode voting.
+    /// `None` or `<= 0.0` runs at native raster resolution.
+    #[serde(default)]
+    pub target_resolution_m: Option<f64>,
+    /// Optional whitelist of LULC integer class codes to simulate (e.g. `[15]` for Pasture only,
+    /// or `[3, 4, 15]` for Forest + Savanna + Pasture). Empty simulates all non-masked classes.
+    #[serde(default)]
+    pub only_classes: Vec<i32>,
+    /// Carbon unit for exported GeoTIFFs (`"mgha"` = `Mg C/ha` default, or `"gm2"` = `g C/m²`).
+    #[serde(default = "default_mgha")]
+    pub output_unit: String,
+    /// Row strip height for memory-bounded tiled parallel execution (default `64`).
+    #[serde(default)]
+    pub tile_rows: Option<usize>,
+    /// Optional cap on pixel records returned in JSON for WebUI responsiveness (COGs always
+    /// contain 100% of simulated pixels). `None` returns all pixels (up to 65,536).
+    #[serde(default)]
+    pub max_preview_pixels: Option<usize>,
     /// Optional worker thread count (`None` = all logical cores).
     pub threads: Option<usize>,
     /// Optional output directory to write compressed Cloud-Optimized GeoTIFFs (`.tif`) via `terrio`.
@@ -172,6 +191,9 @@ fn default_demo_mode() -> String {
 }
 fn default_mapbiomas() -> String {
     "mapbiomas_br".into()
+}
+fn default_mgha() -> String {
+    "mgha".into()
 }
 fn default_true() -> bool {
     true
@@ -212,12 +234,24 @@ pub struct LulcPixelResult {
     pub lulc_final: i32,
     /// Whether this pixel experienced at least one land-use transition.
     pub converted: bool,
-    /// Post-spinup equilibrium SOMSC ($\text{g C}\cdot\text{m}^{-2}$).
+    /// Post-spinup equilibrium SOMSC (`0–20 cm`, $\text{g C}\cdot\text{m}^{-2}$).
     pub somsc_initial: f64,
-    /// Final SOMSC after transient period ($\text{g C}\cdot\text{m}^{-2}$).
+    /// Final SOMSC (`0–20 cm`) after transient period ($\text{g C}\cdot\text{m}^{-2}$).
     pub somsc_final: f64,
-    /// Net soil carbon change `somsc_final - somsc_initial` ($\text{g C}\cdot\text{m}^{-2}$).
+    /// Net soil carbon change `somsc_final - somsc_initial` (`0–20 cm`, $\text{g C}\cdot\text{m}^{-2}$).
     pub delta_somsc: f64,
+    /// Final **IPCC `0–30 cm`** SOMSC ($\text{g C}\cdot\text{m}^{-2}$).
+    #[serde(default)]
+    pub somsc_0_30: f64,
+    /// Net **IPCC `0–30 cm`** soil carbon change ($\text{g C}\cdot\text{m}^{-2}$).
+    #[serde(default)]
+    pub delta_somsc_0_30: f64,
+    /// Final **Deep `0–100 cm`** SOMSC ($\text{g C}\cdot\text{m}^{-2}$).
+    #[serde(default)]
+    pub somsc_0_100: f64,
+    /// Net **Deep `0–100 cm`** soil carbon change ($\text{g C}\cdot\text{m}^{-2}$).
+    #[serde(default)]
+    pub delta_somsc_0_100: f64,
     /// Final passive SOM3 ($\text{g C}\cdot\text{m}^{-2}$).
     pub som3c: f64,
     /// Final total live vegetation biomass carbon ($\text{g C}\cdot\text{m}^{-2}$).
@@ -239,6 +273,12 @@ pub struct LulcRunResponse {
     pub rows: usize,
     /// Grid width.
     pub cols: usize,
+    /// Effective spatial modeling resolution in meters.
+    #[serde(default)]
+    pub resolution_m: f64,
+    /// Majority-mode aggregation stride applied (`1` = native resolution).
+    #[serde(default)]
+    pub downsample_stride: usize,
     /// Number of active simulated pixels.
     pub n_active: usize,
     /// Number of pixels that underwent land-use conversion.
@@ -251,12 +291,24 @@ pub struct LulcRunResponse {
     pub elapsed_secs: f64,
     /// Throughput in pixel-years per second.
     pub pixel_years_per_sec: f64,
-    /// Mean final `SOMSC` across active pixels ($\text{g C}\cdot\text{m}^{-2}$).
+    /// Mean final `SOMSC` (`0–20 cm`) across active pixels ($\text{g C}\cdot\text{m}^{-2}$).
     pub mean_somsc: f64,
-    /// Mean net `ΔSOMSC` across active pixels ($\text{g C}\cdot\text{m}^{-2}$).
+    /// Mean final **IPCC `0–30 cm`** `SOMSC` across active pixels ($\text{g C}\cdot\text{m}^{-2}$).
+    #[serde(default)]
+    pub mean_somsc_0_30: f64,
+    /// Mean final **Deep `0–100 cm`** `SOMSC` across active pixels ($\text{g C}\cdot\text{m}^{-2}$).
+    #[serde(default)]
+    pub mean_somsc_0_100: f64,
+    /// Mean net `ΔSOMSC` (`0–20 cm`) across active pixels ($\text{g C}\cdot\text{m}^{-2}$).
     pub mean_delta_somsc: f64,
-    /// Mean net `ΔSOMSC` converted to $\text{t C}\cdot\text{ha}^{-1}$ (`g/m² ÷ 100`).
+    /// Mean net `ΔSOMSC` converted to $\text{Mg C}\cdot\text{ha}^{-1}$ (`g/m² ÷ 100`).
     pub mean_delta_t_c_ha: f64,
+    /// Unit used when writing exported COG rasters (`"Mg C/ha"` or `"g C/m²"`).
+    #[serde(default)]
+    pub cog_unit: String,
+    /// Whether `pixels` was decimated for WebUI preview responsiveness (COGs always hold full grid).
+    #[serde(default)]
+    pub preview_truncated: bool,
     /// Active class legend used for rendering.
     pub legend: Vec<LulcClassMapping>,
     /// Paths of Cloud-Optimized GeoTIFFs written via `terrio` (if `export_cog_dir` was provided).
@@ -926,7 +978,7 @@ fn build_demo_frontier(
 fn load_real_geotiff_tasks(
     req: &LulcRunRequest,
     class_map: &HashMap<i32, LulcClassMapping>,
-) -> Result<(GeoRaster, Vec<PixelTask>, String), String> {
+) -> Result<(GeoRaster, Vec<PixelTask>, String, usize), String> {
     if req.lulc_paths.is_empty() {
         return Err("Provide at least one LULC GeoTIFF/COG path in `lulc_paths`.".into());
     }
@@ -943,12 +995,27 @@ fn load_real_geotiff_tasks(
         return Err("No valid LULC paths provided.".into());
     }
 
-    let template = lulc_rasters[0].clone();
+    let raw_template = lulc_rasters[0].clone();
+    let stride = req
+        .target_resolution_m
+        .map(|m| raw_template.stride_for_target_meters(m))
+        .unwrap_or(1);
+    let template = if stride > 1 {
+        raw_template
+            .aggregate_categorical_mode(stride)
+            .map_err(|e| e.to_string())?
+    } else {
+        raw_template
+    };
     let rows = template.rows();
     let cols = template.cols();
-    if rows * cols > 1_000_000 {
+    let eff_res_m = template.pixel_resolution_meters();
+    // Allow large rasters (up to 25M pixels per tile-streamed run on modern servers;
+    // users on laptops can select `--resolution-m 1000` or `--only-classes 15`).
+    if rows * cols > 25_000_000 {
         return Err(format!(
-            "Raster {rows}x{cols} exceeds 1,000,000 interactive Studio pixel limit; use `oxisol raster` CLI for ultra-large rasters."
+            "Aggregated grid {rows}x{cols} ({:.0} m) exceeds 25M pixels; pass a coarser `target_resolution_m` or split into regional tiles.",
+            eff_res_m
         ));
     }
 
@@ -992,6 +1059,12 @@ fn load_real_geotiff_tasks(
         req.transient_years.clamp(1, 200) as usize
     };
 
+    let only_set: Option<std::collections::HashSet<i32>> = if req.only_classes.is_empty() {
+        None
+    } else {
+        Some(req.only_classes.iter().copied().collect())
+    };
+
     let mut tasks = Vec::new();
     for r in 0..rows {
         let fr = r as f64 / rows.max(1) as f64;
@@ -1006,6 +1079,24 @@ fn load_real_geotiff_tasks(
             };
             if m0.preset_id == "masked" {
                 continue;
+            }
+            if let Some(ref allowed) = only_set {
+                if !allowed.contains(&code0) {
+                    // For multi-year LULC, keep pixel if ANY year hits an allowed class (captures LUC into e.g. Pasture 15)
+                    let any_allowed = if lulc_rasters.len() > 1 {
+                        let (x, y) = template.pixel_xy(r, c);
+                        lulc_rasters.iter().skip(1).any(|lr| {
+                            lr.sample_at_xy_or_frac(0, x, y, fr, fc)
+                                .map(|v| allowed.contains(&(v.round() as i32)))
+                                .unwrap_or(false)
+                        })
+                    } else {
+                        false
+                    };
+                    if !any_allowed {
+                        continue;
+                    }
+                }
             }
 
             let (x, y) = template.pixel_xy(r, c);
@@ -1164,13 +1255,15 @@ fn load_real_geotiff_tasks(
     }
 
     let label = format!(
-        "GeoTIFF/terrio ({}x{}, {} LULC yr{})",
+        "GeoTIFF/terrio ({}x{}, {:.0} m, stride {}x, {} LULC yr{})",
         rows,
         cols,
+        eff_res_m,
+        stride,
         lulc_rasters.len(),
         if lulc_rasters.len() > 1 { "s" } else { "" }
     );
-    Ok((template, tasks, label))
+    Ok((template, tasks, label, stride))
 }
 
 fn build_biome_and_schedule(
@@ -1312,20 +1405,28 @@ pub fn execute_lulc_run(req: &LulcRunRequest) -> Result<LulcRunResponse, String>
     let class_map: HashMap<i32, LulcClassMapping> =
         legend.iter().map(|m| (m.code, m.clone())).collect();
 
-    let (template, tasks, source_label) = if req.mode.eq_ignore_ascii_case("geotiff") {
-        load_real_geotiff_tasks(req, &class_map)?
-    } else {
-        let (tpl, tks) = build_demo_frontier(
-            transient_years,
-            req.temp_delta_c.clamp(-6.0, 10.0),
-            req.precip_scale.clamp(0.4, 2.0),
-        );
-        (
-            tpl,
-            tks,
-            format!("Amazon–Cerrado Frontier LUC Demo (EPSG:4326, {transient_years} yr)"),
-        )
-    };
+    let (template, mut tasks, source_label, downsample_stride) =
+        if req.mode.eq_ignore_ascii_case("geotiff") {
+            load_real_geotiff_tasks(req, &class_map)?
+        } else {
+            let (tpl, tks) = build_demo_frontier(
+                transient_years,
+                req.temp_delta_c.clamp(-6.0, 10.0),
+                req.precip_scale.clamp(0.4, 2.0),
+            );
+            (
+                tpl,
+                tks,
+                format!("Amazon–Cerrado Frontier LUC Demo (EPSG:4326, {transient_years} yr)"),
+                1usize,
+            )
+        };
+
+    // Apply optional class whitelist to demo mode as well (e.g. `only_classes: [15]` = Pasture only)
+    if !req.only_classes.is_empty() && !req.mode.eq_ignore_ascii_case("geotiff") {
+        let allowed: std::collections::HashSet<i32> = req.only_classes.iter().copied().collect();
+        tasks.retain(|t| t.lulc_series.iter().any(|c| allowed.contains(c)));
+    }
 
     let max_cpus = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -1341,220 +1442,329 @@ pub fn execute_lulc_run(req: &LulcRunRequest) -> Result<LulcRunResponse, String>
         .map_err(|e| format!("rayon thread pool error: {e}"))?;
 
     let cropland_tillage = req.cropland_tillage;
-    let pixels: Vec<LulcPixelResult> = pool.install(|| {
-        tasks
-            .par_iter()
-            .filter_map(|task| {
-                let init_code = *task.lulc_series.first()?;
-                let init_map = class_map.get(&init_code)?;
-                if init_map.preset_id == "masked" {
-                    return None;
-                }
+    let rows = template.rows();
+    let cols = template.cols();
+    let resolution_m = template.pixel_resolution_meters();
+    let tile_rows = req.tile_rows.unwrap_or(64).clamp(4, rows.max(4));
+    let use_mgha = !req.output_unit.eq_ignore_ascii_case("gm2");
+    let cog_scale = if use_mgha { 0.01_f64 } else { 1.0_f64 };
+    let cog_unit = if use_mgha {
+        "Mg C/ha".to_string()
+    } else {
+        "g C/m²".to_string()
+    };
 
-                let total_tr = task.lulc_series.len() as i32;
-                let (mut biome, mut sched) = build_biome_and_schedule(
-                    init_map,
-                    task.lat,
-                    spinup_years + total_tr,
-                    cropland_tillage,
-                );
-
-                let cell_in = CellSiteInput {
-                    lat: task.lat,
-                    lon: task.lon,
-                    elevation: 250.0,
-                    sand: task.sand,
-                    silt: task.silt,
-                    clay: task.clay,
-                    bulkd: task.bulkd,
-                    rock_frac: task.rock_frac,
-                    zminrl_cm: None,
-                    ph: task.ph,
-                    drain: 1.0,
-                };
-                let cfg = SimConfig {
-                    profile: CompatibilityProfile::ScientificClean,
-                    elements: ElementMode::CarbonNitrogen,
-                    isotope: IsotopeMode::Unlabeled,
-                    co2_ppm_override: Some(co2_start),
-                    audit_mass_balance: false,
-                    start_year: 1,
-                    end_year: spinup_years + total_tr,
-                };
-
-                let (mut state, derived) =
-                    initialize_cell(&biome, &cell_in, &task.weather_series[0], &sched, &cfg);
-                let mut sel = ActiveSelection::from_schedule(&sched);
-
-                // Phase 1: Equilibrium spinup on initial LULC class
-                for yr in 1..=spinup_years {
-                    for (m, w_mo) in task.weather_series[0].iter().enumerate() {
-                        let _ = step_month(
-                            &mut state,
-                            &derived,
-                            &biome,
-                            &mut sel,
-                            &sched,
-                            w_mo,
-                            yr,
-                            (m + 1) as u8,
-                            co2_start,
-                            &cfg,
-                        );
-                    }
-                }
-                let somsc_initial = state.somsc();
-
-                // Phase 2: Transient multi-year LULC + modeled climate + CO2 ramp
-                let mut curr_code = init_code;
-                let mut converted = false;
-                let mut last_npp = 0.0_f64;
-                let mut last_aet = 0.0_f64;
-
-                for (i, &code) in task.lulc_series.iter().enumerate() {
-                    if code != curr_code {
-                        if let (Some(prev_m), Some(next_m)) =
-                            (class_map.get(&curr_code), class_map.get(&code))
-                        {
-                            if next_m.preset_id != "masked" {
-                                apply_luc_transition(&mut state, prev_m, next_m);
-                                let (new_b, new_s) = build_biome_and_schedule(
-                                    next_m,
-                                    task.lat,
-                                    spinup_years + total_tr,
-                                    cropland_tillage,
-                                );
-                                biome = new_b;
-                                sched = new_s;
-                                sel = ActiveSelection::from_schedule(&sched);
-                                curr_code = code;
-                                converted = true;
-                            }
-                        }
-                    }
-                    let frac = if task.lulc_series.len() > 1 {
-                        i as f64 / (task.lulc_series.len() - 1) as f64
-                    } else {
-                        0.0
-                    };
-                    let co2_yr = co2_start + (co2_end - co2_start) * frac;
-                    let yr = spinup_years + (i as i32) + 1;
-                    let w_yr = &task.weather_series[i.min(task.weather_series.len() - 1)];
-
-                    let mut ann_npp = 0.0;
-                    let mut ann_aet = 0.0;
-                    for (m, w_mo) in w_yr.iter().enumerate() {
-                        let (mo, _) = step_month(
-                            &mut state,
-                            &derived,
-                            &biome,
-                            &mut sel,
-                            &sched,
-                            w_mo,
-                            yr,
-                            (m + 1) as u8,
-                            co2_yr,
-                            &cfg,
-                        );
-                        ann_npp += mo.npp;
-                        ann_aet += mo.aet;
-                    }
-                    last_npp = ann_npp;
-                    last_aet = ann_aet;
-                }
-
-                let somsc_final = state.somsc();
-                let biomass_c = state.aglivc.total()
-                    + state.bglivc.total()
-                    + state.rleavc.total()
-                    + state.frootc.total()
-                    + state.fbrchc.total()
-                    + state.rlwodc.total()
-                    + state.crootc.total();
-
-                Some(LulcPixelResult {
-                    row: task.row,
-                    col: task.col,
-                    lat: task.lat,
-                    lon: task.lon,
-                    lulc_initial: init_code,
-                    lulc_final: curr_code,
-                    converted,
-                    somsc_initial,
-                    somsc_final,
-                    delta_somsc: somsc_final - somsc_initial,
-                    som3c: state.som3c.total(),
-                    biomass_c,
-                    npp: last_npp,
-                    aet: last_aet,
-                    minerl_n: state.minerl[0][0],
-                })
-            })
-            .collect()
+    // Pre-allocate compact COG export grids only when an export directory is requested,
+    // allowing strip-tiled streaming across laptops (low RAM) and 128–256T HPC servers.
+    let export_dir_opt = req
+        .export_cog_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(Path::new);
+    let nd = -9999.0_f64;
+    let mut cog_bufs: Option<[Vec<f64>; 9]> = export_dir_opt.map(|_| {
+        let n = rows * cols;
+        [
+            vec![nd; n],
+            vec![nd; n],
+            vec![nd; n],
+            vec![nd; n],
+            vec![nd; n],
+            vec![nd; n],
+            vec![nd; n],
+            vec![nd; n],
+            vec![nd; n],
+        ]
     });
 
-    // Optional real Cloud-Optimized GeoTIFF export via `terrio`
-    let mut exported_cogs = Vec::new();
-    if let Some(dir_str) = req.export_cog_dir.as_deref().map(str::trim) {
-        if !dir_str.is_empty() {
-            let out_dir = Path::new(dir_str);
-            std::fs::create_dir_all(out_dir)
-                .map_err(|e| format!("Failed to create export dir '{dir_str}': {e}"))?;
-            let rows = template.rows();
-            let cols = template.cols();
-            let nd = -9999.0_f64;
+    // Execute in row strips (`tile_rows`) with lock-free rayon parallelism inside each strip.
+    let max_preview = req.max_preview_pixels.unwrap_or(65_536);
+    let mut all_pixels: Vec<LulcPixelResult> = Vec::with_capacity(tasks.len().min(max_preview));
+    let mut n_active = 0usize;
+    let mut n_converted = 0usize;
+    let mut sum_som_20 = 0.0_f64;
+    let mut sum_som_30 = 0.0_f64;
+    let mut sum_som_100 = 0.0_f64;
+    let mut sum_delta_20 = 0.0_f64;
+    let mut preview_truncated = false;
 
-            type LayerGetter = fn(&LulcPixelResult) -> f64;
-            let layers: [(&str, LayerGetter); 6] = [
-                ("oxisol_somsc.tif", |p| p.somsc_final),
-                ("oxisol_delta_somsc.tif", |p| p.delta_somsc),
-                ("oxisol_biomass_c.tif", |p| p.biomass_c),
-                ("oxisol_npp.tif", |p| p.npp),
-                ("oxisol_aet.tif", |p| p.aet),
-                ("oxisol_minerl_n.tif", |p| p.minerl_n),
-            ];
+    for strip_r0 in (0..rows).step_by(tile_rows) {
+        let strip_r1 = (strip_r0 + tile_rows).min(rows);
+        let strip_tasks: Vec<&PixelTask> = tasks
+            .iter()
+            .filter(|t| t.row >= strip_r0 && t.row < strip_r1)
+            .collect();
+        if strip_tasks.is_empty() {
+            continue;
+        }
 
-            for (fname, getter) in layers {
-                let mut buf = vec![nd; rows * cols];
-                for p in &pixels {
-                    buf[p.row * cols + p.col] = getter(p);
-                }
-                let out_path = out_dir.join(fname);
-                let out_raster = template
-                    .derive_like(nd, buf)
-                    .map_err(|e| format!("derive_like failed for {fname}: {e}"))?;
-                out_raster
-                    .write_cog(&out_path)
-                    .map_err(|e| format!("COG write failed for {fname}: {e}"))?;
-                exported_cogs.push(out_path.display().to_string());
+        let strip_res: Vec<LulcPixelResult> = pool.install(|| {
+            strip_tasks
+                .par_iter()
+                .filter_map(|task| {
+                    let init_code = *task.lulc_series.first()?;
+                    let init_map = class_map.get(&init_code)?;
+                    if init_map.preset_id == "masked" {
+                        return None;
+                    }
+
+                    let total_tr = task.lulc_series.len() as i32;
+                    let (mut biome, mut sched) = build_biome_and_schedule(
+                        init_map,
+                        task.lat,
+                        spinup_years + total_tr,
+                        cropland_tillage,
+                    );
+
+                    let cell_in = CellSiteInput {
+                        lat: task.lat,
+                        lon: task.lon,
+                        elevation: 250.0,
+                        sand: task.sand,
+                        silt: task.silt,
+                        clay: task.clay,
+                        bulkd: task.bulkd,
+                        rock_frac: task.rock_frac,
+                        zminrl_cm: None,
+                        ph: task.ph,
+                        drain: 1.0,
+                    };
+                    let cfg = SimConfig {
+                        profile: CompatibilityProfile::ScientificClean,
+                        elements: ElementMode::CarbonNitrogen,
+                        isotope: IsotopeMode::Unlabeled,
+                        co2_ppm_override: Some(co2_start),
+                        audit_mass_balance: false,
+                        start_year: 1,
+                        end_year: spinup_years + total_tr,
+                    };
+
+                    let (mut state, derived) =
+                        initialize_cell(&biome, &cell_in, &task.weather_series[0], &sched, &cfg);
+                    let mut deep_som = oxisol_core::DeepSomProfile::<f64>::initialize(
+                        state.somsc(),
+                        task.clay,
+                        &init_map.preset_id,
+                    );
+                    let mut sel = ActiveSelection::from_schedule(&sched);
+
+                    // Phase 1: Equilibrium spinup on initial LULC class
+                    for yr in 1..=spinup_years {
+                        for (m, w_mo) in task.weather_series[0].iter().enumerate() {
+                            let (mo, _) = step_month(
+                                &mut state,
+                                &derived,
+                                &biome,
+                                &mut sel,
+                                &sched,
+                                w_mo,
+                                yr,
+                                (m + 1) as u8,
+                                co2_start,
+                                &cfg,
+                            );
+                            let _ = deep_som.step_month(
+                                mo.npp,
+                                state.somsc(),
+                                state.defac,
+                                state.anerb,
+                                task.clay,
+                                state.stream,
+                            );
+                        }
+                    }
+                    let depth_init = deep_som.summary(state.somsc());
+                    let somsc_initial = depth_init.somsc_0_20;
+
+                    // Phase 2: Transient multi-year LULC + modeled climate + CO2 ramp
+                    let mut curr_code = init_code;
+                    let mut converted = false;
+                    let mut last_npp = 0.0_f64;
+                    let mut last_aet = 0.0_f64;
+
+                    for (i, &code) in task.lulc_series.iter().enumerate() {
+                        if code != curr_code {
+                            if let (Some(prev_m), Some(next_m)) =
+                                (class_map.get(&curr_code), class_map.get(&code))
+                            {
+                                if next_m.preset_id != "masked" {
+                                    apply_luc_transition(&mut state, prev_m, next_m);
+                                    deep_som.set_preset(&next_m.preset_id);
+                                    let (new_b, new_s) = build_biome_and_schedule(
+                                        next_m,
+                                        task.lat,
+                                        spinup_years + total_tr,
+                                        cropland_tillage,
+                                    );
+                                    biome = new_b;
+                                    sched = new_s;
+                                    sel = ActiveSelection::from_schedule(&sched);
+                                    curr_code = code;
+                                    converted = true;
+                                }
+                            }
+                        }
+                        let frac = if task.lulc_series.len() > 1 {
+                            i as f64 / (task.lulc_series.len() - 1) as f64
+                        } else {
+                            0.0
+                        };
+                        let co2_yr = co2_start + (co2_end - co2_start) * frac;
+                        let yr = spinup_years + (i as i32) + 1;
+                        let w_yr = &task.weather_series[i.min(task.weather_series.len() - 1)];
+
+                        let mut ann_npp = 0.0;
+                        let mut ann_aet = 0.0;
+                        for (m, w_mo) in w_yr.iter().enumerate() {
+                            let (mo, _) = step_month(
+                                &mut state,
+                                &derived,
+                                &biome,
+                                &mut sel,
+                                &sched,
+                                w_mo,
+                                yr,
+                                (m + 1) as u8,
+                                co2_yr,
+                                &cfg,
+                            );
+                            let _ = deep_som.step_month(
+                                mo.npp,
+                                state.somsc(),
+                                state.defac,
+                                state.anerb,
+                                task.clay,
+                                state.stream,
+                            );
+                            ann_npp += mo.npp;
+                            ann_aet += mo.aet;
+                        }
+                        last_npp = ann_npp;
+                        last_aet = ann_aet;
+                    }
+
+                    let depth_final = deep_som.summary(state.somsc());
+                    let somsc_final = depth_final.somsc_0_20;
+                    let biomass_c = state.aglivc.total()
+                        + state.bglivc.total()
+                        + state.rleavc.total()
+                        + state.frootc.total()
+                        + state.fbrchc.total()
+                        + state.rlwodc.total()
+                        + state.crootc.total();
+
+                    Some(LulcPixelResult {
+                        row: task.row,
+                        col: task.col,
+                        lat: task.lat,
+                        lon: task.lon,
+                        lulc_initial: init_code,
+                        lulc_final: curr_code,
+                        converted,
+                        somsc_initial,
+                        somsc_final,
+                        delta_somsc: somsc_final - somsc_initial,
+                        somsc_0_30: depth_final.somsc_0_30,
+                        delta_somsc_0_30: depth_final.somsc_0_30 - depth_init.somsc_0_30,
+                        somsc_0_100: depth_final.somsc_0_100,
+                        delta_somsc_0_100: depth_final.somsc_0_100 - depth_init.somsc_0_100,
+                        som3c: state.som3c.total(),
+                        biomass_c,
+                        npp: last_npp,
+                        aet: last_aet,
+                        minerl_n: state.minerl[0][0],
+                    })
+                })
+                .collect()
+        });
+
+        for p in strip_res {
+            n_active += 1;
+            if p.converted {
+                n_converted += 1;
+            }
+            sum_som_20 += p.somsc_final;
+            sum_som_30 += p.somsc_0_30;
+            sum_som_100 += p.somsc_0_100;
+            sum_delta_20 += p.delta_somsc;
+
+            if let Some(ref mut bufs) = cog_bufs {
+                let idx = p.row * cols + p.col;
+                bufs[0][idx] = p.somsc_final * cog_scale;
+                bufs[1][idx] = p.somsc_0_30 * cog_scale;
+                bufs[2][idx] = p.somsc_0_100 * cog_scale;
+                bufs[3][idx] = p.delta_somsc * cog_scale;
+                bufs[4][idx] = p.delta_somsc_0_30 * cog_scale;
+                bufs[5][idx] = p.biomass_c * cog_scale;
+                bufs[6][idx] = p.npp * cog_scale;
+                bufs[7][idx] = p.aet;
+                bufs[8][idx] = p.minerl_n;
+            }
+
+            if all_pixels.len() < max_preview {
+                all_pixels.push(p);
+            } else {
+                preview_truncated = true;
             }
         }
     }
 
+    // Optional real Cloud-Optimized GeoTIFF export via `terrio`
+    let mut exported_cogs = Vec::new();
+    if let (Some(out_dir), Some(bufs)) = (export_dir_opt, cog_bufs) {
+        std::fs::create_dir_all(out_dir)
+            .map_err(|e| format!("Failed to create export dir '{}': {e}", out_dir.display()))?;
+        let unit_tag = if use_mgha { "mgha" } else { "gm2" };
+        let fnames = [
+            format!("oxisol_somsc_0_20_{unit_tag}.tif"),
+            format!("oxisol_somsc_0_30_ipcc_{unit_tag}.tif"),
+            format!("oxisol_somsc_0_100_deep_{unit_tag}.tif"),
+            format!("oxisol_delta_somsc_0_20_{unit_tag}.tif"),
+            format!("oxisol_delta_somsc_0_30_ipcc_{unit_tag}.tif"),
+            format!("oxisol_biomass_c_{unit_tag}.tif"),
+            format!("oxisol_npp_{unit_tag}.tif"),
+            "oxisol_aet_cm.tif".to_string(),
+            "oxisol_minerl_n_gm2.tif".to_string(),
+        ];
+        for (fname, buf) in fnames.into_iter().zip(bufs) {
+            let out_path = out_dir.join(&fname);
+            let out_raster = template
+                .derive_like(nd, buf)
+                .map_err(|e| format!("derive_like failed for {fname}: {e}"))?;
+            out_raster
+                .write_cog(&out_path)
+                .map_err(|e| format!("COG write failed for {fname}: {e}"))?;
+            exported_cogs.push(out_path.display().to_string());
+        }
+    }
+
     let elapsed_secs = t0.elapsed().as_secs_f64().max(1.0e-9);
-    let n_active = pixels.len();
-    let n_converted = pixels.iter().filter(|p| p.converted).count();
     let total_yrs = (spinup_years as usize) + transient_years;
-    let sum_som: f64 = pixels.iter().map(|p| p.somsc_final).sum();
-    let sum_delta: f64 = pixels.iter().map(|p| p.delta_somsc).sum();
     let denom = n_active.max(1) as f64;
-    let mean_delta = sum_delta / denom;
+    let mean_delta = sum_delta_20 / denom;
 
     Ok(LulcRunResponse {
         source_label,
-        rows: template.rows(),
-        cols: template.cols(),
+        rows,
+        cols,
+        resolution_m,
+        downsample_stride,
         n_active,
         n_converted,
         total_years_per_pixel: total_yrs,
         threads_used,
         elapsed_secs,
         pixel_years_per_sec: (n_active * total_yrs) as f64 / elapsed_secs,
-        mean_somsc: sum_som / denom,
+        mean_somsc: sum_som_20 / denom,
+        mean_somsc_0_30: sum_som_30 / denom,
+        mean_somsc_0_100: sum_som_100 / denom,
         mean_delta_somsc: mean_delta,
         mean_delta_t_c_ha: mean_delta / 100.0,
+        cog_unit,
+        preview_truncated,
         legend,
         exported_cogs,
-        pixels,
+        pixels: all_pixels,
     })
 }

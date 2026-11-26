@@ -120,6 +120,8 @@ fn execute_single_cell_typed<F: Float>(
     };
 
     let (mut state, derived) = initialize_cell(&biome, &cell_in, &weather, &schedule, &cfg);
+    let mut deep_som =
+        oxisol_core::DeepSomProfile::<F>::initialize(state.somsc(), f(clay), &req.preset_id);
     let mut sel = ActiveSelection::from_schedule(&schedule);
     let mut series = Vec::with_capacity(years as usize);
     let mut max_err = 0.0_f64;
@@ -154,6 +156,14 @@ fn execute_single_cell_typed<F: Float>(
                 f(co2_yr),
                 &cfg,
             );
+            let _sub_resp = deep_som.step_month(
+                mo.npp,
+                state.somsc(),
+                state.defac,
+                state.anerb,
+                f(clay),
+                state.stream,
+            );
             ann_npp += mo.npp.to_f64();
             ann_resp += mo.resp.to_f64();
             ann_aet += mo.aet.to_f64();
@@ -170,6 +180,7 @@ fn execute_single_cell_typed<F: Float>(
         final_npp = ann_npp;
         final_resp = ann_resp;
         final_aet = ann_aet;
+        let depth_yr = deep_som.summary(state.somsc());
 
         series.push(AnnualPoint {
             year: yr,
@@ -177,6 +188,8 @@ fn execute_single_cell_typed<F: Float>(
             som2c: state.som2c.total().to_f64(),
             som3c: state.som3c.total().to_f64(),
             somsc: state.somsc().to_f64(),
+            somsc_0_30: depth_yr.somsc_0_30,
+            somsc_0_100: depth_yr.somsc_0_100,
             aglivc: state.aglivc.total().to_f64(),
             bglivc: state.bglivc.total().to_f64(),
             rlwodc: state.rlwodc.total().to_f64(),
@@ -240,6 +253,7 @@ fn execute_single_cell_typed<F: Float>(
             som2_c: state.som2c.total().to_f64(),
             som3_c: state.som3c.total().to_f64(),
             somsc: state.somsc().to_f64(),
+            depth_profile: deep_som.summary(state.somsc()),
             som_n,
             profile_minerl_n: prof_n,
             profile_minerl_p: prof_p,

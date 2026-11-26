@@ -71,19 +71,35 @@ Exits with code `0` if within threshold (or if `--max-rel-err` is omitted), and 
 Run a headless georeferenced LULC + modeled climate + soil simulation directly on GeoTIFF / Cloud-Optimized GeoTIFF / NetCDF rasters (powered by pure-Rust [`terrio`](https://github.com/opengeos/terrio)) and export DEFLATE-compressed COGs preserving CRS and geotransform:
 
 ```bash
-# Run on real MapBiomas + ERA5/WorldClim + SoilGrids GeoTIFFs
+# Laptop-friendly run: MapBiomas Col. 11 Pasture ONLY (--only-classes 15) at 1 km resolution,
+# exporting 9 DEFLATE-compressed COGs in Mg C/ha (0-20 cm, 0-30 cm IPCC, 0-100 cm Deep Profile)
 oxisol raster \
-  --lulc /data/mapbiomas_2000.tif \
-  --lulc /data/mapbiomas_2020.tif \
+  --lulc /data/mapbiomas_1990.tif \
+  --lulc /data/mapbiomas_2024.tif \
   --scheme mapbiomas_br \
-  --precip /data/precip_12m.tif \
-  --tmin /data/tmin_12m.tif \
-  --tmax /data/tmax_12m.tif \
-  --sand /data/soilgrids_sand.tif \
-  --clay /data/soilgrids_clay.tif \
-  --out-dir /data/oxisol_cogs
+  --only-classes 15 \
+  --resolution-m 1000 \
+  --precip /data/terraclimate_precip_12m_mm.tif --precip-unit mm \
+  --tmin /data/terraclimate_tmin_12m_c.tif --temp-unit celsius \
+  --tmax /data/terraclimate_tmax_12m_c.tif \
+  --sand /data/soilgrids_sand_gkg.tif \
+  --clay /data/soilgrids_clay_gkg.tif \
+  --bulkd /data/soilgrids_bdod_cgcm3.tif \
+  --ph /data/soilgrids_phh2o_x10.tif \
+  --unit mgha \
+  --tile-rows 32 \
+  --out-dir /data/oxisol_pasture_cogs
 
-# Or run the built-in Amazon-Cerrado Demo and export 6 EPSG:4326 COGs immediately
+# Modern HPC server run: omit --resolution-m (native), saturate all CPU threads with larger strips
+oxisol raster \
+  --lulc /data/mapbiomas_2024.tif \
+  --precip /data/terraclimate_precip_12m_mm.tif \
+  --tmin /data/terraclimate_tmin_12m_c.tif \
+  --tmax /data/terraclimate_tmax_12m_c.tif \
+  --tile-rows 128 --threads "$(nproc)" \
+  --out-dir /data/oxisol_hpc_cogs
+
+# Or run the built-in Amazon-Cerrado Demo and export 9 EPSG:4326 COGs in Mg C/ha immediately
 oxisol raster --out-dir /tmp/oxisol_demo_cogs
 ```
 

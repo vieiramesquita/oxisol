@@ -419,6 +419,11 @@ mod tests {
             temp_delta_c: 1.5,
             precip_scale: 0.92,
             cropland_tillage: crate::models::TillageMode::MoldboardPlow,
+            target_resolution_m: None,
+            only_classes: vec![],
+            output_unit: "mgha".into(),
+            tile_rows: Some(16),
+            max_preview_pixels: None,
             threads: Some(2),
             export_cog_dir: Some(tmp_dir.display().to_string()),
         };
@@ -441,7 +446,9 @@ mod tests {
         let out: crate::lulc::LulcRunResponse = serde_json::from_slice(&bytes).unwrap();
         assert!(out.n_active > 1000);
         assert!(out.n_converted > 100);
-        assert_eq!(out.exported_cogs.len(), 6);
+        assert!(out.mean_somsc_0_100 > out.mean_somsc_0_30 && out.mean_somsc_0_30 > out.mean_somsc);
+        assert_eq!(out.cog_unit, "Mg C/ha");
+        assert_eq!(out.exported_cogs.len(), 9);
         // Verify exported COG reads back cleanly via terrio
         let som_cog = oxisol_io::raster_geo::GeoRaster::open(&out.exported_cogs[0]).unwrap();
         assert_eq!(som_cog.rows(), 36);

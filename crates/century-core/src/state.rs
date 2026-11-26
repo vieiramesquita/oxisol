@@ -50,6 +50,10 @@ impl<F: Float> CarbonPool<F> {
     /// Add carbon `delta` with labeled fraction `lab_frac`.
     #[inline(always)]
     pub fn add(&mut self, delta: F, lab_frac: F) {
+        if lab_frac == F::ZERO {
+            self.unlab += delta;
+            return;
+        }
         let lf = lab_frac.clamp_val(F::ZERO, F::ONE);
         self.unlab += delta * (F::ONE - lf);
         self.lab += delta * lf;
@@ -58,6 +62,14 @@ impl<F: Float> CarbonPool<F> {
     /// Remove carbon `amount` preserving the pool's isotopic ratio; returns actual removed.
     #[inline(always)]
     pub fn sub_preserving_ratio(&mut self, amount: F) -> (F, F) {
+        if self.lab == F::ZERO {
+            if self.unlab <= F::EPS_GUARD || amount <= F::ZERO {
+                return (F::ZERO, F::ZERO);
+            }
+            let actual = amount.min(self.unlab);
+            self.unlab = (self.unlab - actual).max(F::ZERO);
+            return (actual, F::ZERO);
+        }
         let tot = self.total();
         if tot <= F::EPS_GUARD || amount <= F::ZERO {
             return (F::ZERO, F::ZERO);
@@ -188,6 +200,9 @@ pub struct CellState<F: Float> {
     pub forgrw: bool,
     /// Active senescence month flag (`senm`).
     pub senm: bool,
+    /// Whether deciduous forest autumn leaf abscission has already occurred this year.
+    #[serde(default)]
+    pub decid_dropped: bool,
     /// Months since last cultivation (for decaying `clteff`).
     pub cult_months: u8,
     /// Active cultivation decomposition multipliers `[som1, som2, som3, structural]` (Manual A2-32).
@@ -306,6 +321,7 @@ impl<F: Float> Default for CellState<F> {
             crpgrw: false,
             forgrw: false,
             senm: false,
+            decid_dropped: false,
             cult_months: 0,
             clteff: [F::ONE; 4],
             fire_frtsh: F::ZERO,

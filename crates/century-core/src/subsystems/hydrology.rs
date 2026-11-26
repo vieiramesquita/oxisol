@@ -33,8 +33,10 @@ pub struct HydrologyStepResult<F: Float> {
     pub amov_30cm: F,
     /// Total runoff + baseflow + stormflow (cm).
     pub stream: F,
-    /// Moisture ratio `(avh2o[2] + liquid_input) / pet` used by `defac` (`idef = 2`) and `anerb`.
+    /// Moisture ratio `(avh2o_prev[2] + liquid_input) / pet` used by `defac` (`idef = 2`) and `anerb`.
     pub rel_water_surface: F,
+    /// Root-zone moisture ratio `(avh2o_prev[0] + liquid_input) / pet` used by plant `pprdwc`.
+    pub rel_water_root: F,
     /// Top-layer relative water content `(asmos[0] - wp) / (fc - wp)` used when `idef = 1`.
     pub top_rwcf: F,
 }
@@ -109,30 +111,63 @@ pub fn step_hydrology<F: Float>(
     profile: CompatibilityProfile,
     ledger: &mut FlowLedger<F>,
 ) -> HydrologyStepResult<F> {
-    let f = F::from_f64;
-    let tmean = (weather.tmin_c + weather.tmax_c) * f(0.5);
     let pet = linacre_pet(month, weather, derived, fix, profile);
+    step_hydrology_with_pet(
+        state,
+        derived,
+        fix,
+        weather,
+        pet,
+        irri_cm,
+        co2_transp_mult,
+        elements,
+        ledger,
+    )
+}
+
+/// Execute monthly soil water budget and solute leaching using a precomputed monthly PET (cm).
+#[allow(clippy::too_many_arguments)]
+pub fn step_hydrology_with_pet<F: Float>(
+    state: &mut CellState<F>,
+    derived: &CellDerivedParams<F>,
+    fix: &FixParams<F>,
+    weather: &MonthlyWeather<F>,
+    pet: F,
+    irri_cm: F,
+    co2_transp_mult: F,
+    elements: ElementMode,
+    ledger: &mut FlowLedger<F>,
+) -> HydrologyStepResult<F> {
+    let f = F::from_f64;
+    let prev_avh2o_root = state.avh2o[0];
+    let prev_avh2o_top30 = state.avh2o[2];
+    let tmean = (weather.tmin_c + weather.tmax_c) * f(0.5);
     let mut pet_rem = pet;
 
-    // 1. Snow accumulation, sublimation, and melt (Manual §3.3 p. 3-4).
+    // 1. Snow accumulation, melt above `tmelt[0]`, and sublimation (Manual §3.3 p. 3-4).
+    // Precipitation accumulates as snow when `tmean <= 0 °C`; snowpack melts whenever
+    // `tmean > tmelt[0]` (which can be negative, e.g. -6 °C) before sublimation acts on
+    // any remaining snowpack.
     let mut liquid_input = irri_cm.max(F::ZERO);
     let mut evap_subl = F::ZERO;
-    let mut is_snow_month = false;
-    if tmean <= F::ZERO {
-        is_snow_month = true;
-        state.snow += weather.precip_cm.max(F::ZERO);
+    let is_snow_month = tmean <= F::ZERO;
+    let precip = weather.precip_cm.max(F::ZERO);
+    if is_snow_month {
+        state.snow += precip;
+    } else {
+        liquid_input += precip;
+    }
+    if state.snow > F::ZERO && tmean > fix.tmelt[0] {
+        let pot_melt = fix.tmelt[1] * (tmean - fix.tmelt[0]);
+        let melt = state.snow.min(pot_melt.max(F::ZERO));
+        state.snow = (state.snow - melt).max(F::ZERO);
+        liquid_input += melt;
+    }
+    if state.snow > F::ZERO && pet_rem > F::ZERO {
         let subl = state.snow.min(pet_rem * f(0.87));
         state.snow = (state.snow - subl).max(F::ZERO);
         evap_subl += subl;
         pet_rem = (pet_rem - subl / f(0.87)).max(F::ZERO);
-    } else {
-        liquid_input += weather.precip_cm.max(F::ZERO);
-        if state.snow > F::ZERO && tmean > fix.tmelt[0] {
-            let pot_melt = fix.tmelt[1] * (tmean - fix.tmelt[0]);
-            let melt = state.snow.min(pot_melt.max(F::ZERO));
-            state.snow = (state.snow - melt).max(F::ZERO);
-            liquid_input += melt;
-        }
     }
 
     let gross_liquid = liquid_input;
@@ -148,10 +183,15 @@ pub fn step_hydrology<F: Float>(
     let mut interception = F::ZERO;
     let mut bare_evap = F::ZERO;
     if gross_liquid > F::ZERO && pet_rem > F::ZERO {
-        // Interception increases with live + dead aboveground biomass (capped at 45%).
+        // Interception increases with live + dead aboveground biomass (capped at 45% of rain
+        // and 0.5 * fwloss[0] * PET so wet canopies retain PET headroom for transpiration).
         let inter_frac = ((f(0.0003) * live_bio + f(0.0006) * dead_bio) * fix.fwloss[0])
             .clamp_val(F::ZERO, f(0.45));
-        interception = (liquid_input * inter_frac).min(pet_rem).min(liquid_input);
+        let inter_pet_cap = pet_rem * f(0.5) * fix.fwloss[0].clamp_val(F::ZERO, F::TWO);
+        interception = (liquid_input * inter_frac)
+            .min(inter_pet_cap)
+            .min(pet_rem)
+            .min(liquid_input);
         liquid_input = (liquid_input - interception).max(F::ZERO);
         pet_rem = (pet_rem - interception).max(F::ZERO);
 
@@ -169,17 +209,19 @@ pub fn step_hydrology<F: Float>(
     let mut flux = liquid_input;
     let mut stormflow = F::ZERO;
     let mut amov = [F::ZERO; MAX_LAYERS];
+    let mut any_amov = false;
     let leach_layer = derived.nlaypg.min(derived.nlayer).saturating_sub(1);
 
     for (l, amov_l) in amov.iter_mut().enumerate().take(derived.nlayer) {
         let fc_cm = derived.afiel[l] * derived.adep[l];
         state.asmos[l] += flux;
         if state.asmos[l] > fc_cm {
-            let excess = state.asmos[l] - fc_cm;
-            // Apply drainage impedance (drain < 1 slows drainage, leaving water above FC).
-            let drained = excess * derived.drain;
-            state.asmos[l] -= drained;
+            let drained = state.asmos[l] - fc_cm;
+            state.asmos[l] = fc_cm;
             flux = drained;
+            if l <= leach_layer && drained > F::ZERO {
+                any_amov = true;
+            }
         } else {
             flux = F::ZERO;
         }
@@ -201,37 +243,39 @@ pub fn step_hydrology<F: Float>(
     let stream = stormflow + baseflow;
 
     // 4. Plant transpiration across rooting layers `0..nlaypg` (never dries below wilting point).
+    // Per Parton et al. (1987, 1993) and Manual §3.3, potential transpiration scales with
+    // `pet * fwloss[2] * (1 - exp(-0.020 * live_bio))` (capped at `pet_rem`) and draws directly
+    // from available root-zone soil water down to wilting point weighted by `awtl[l]`.
     let mut tran = F::ZERO;
     let ptran = if !is_snow_month && pet_rem > F::ZERO {
-        let bio_transp = (F::ONE - (-f(0.005) * live_bio).exp()).clamp_val(f(0.02), F::ONE);
-        (pet_rem * fix.fwloss[2] * bio_transp * co2_transp_mult).min(pet_rem)
+        let bio_transp = (F::ONE - (-f(0.020) * live_bio).exp()).clamp_val(f(0.02), F::ONE);
+        (pet * fix.fwloss[2] * bio_transp * co2_transp_mult).min(pet_rem)
     } else {
         F::ZERO
     };
+
+    // Precompute wilting-point storage per layer once for transpiration and avh2o updates.
+    let mut wp_cm = [F::ZERO; MAX_LAYERS];
+    for (l, wp_l) in wp_cm.iter_mut().enumerate().take(derived.nlayer) {
+        *wp_l = derived.awilt[l] * derived.adep[l];
+    }
 
     if ptran > F::ZERO {
         let mut avail_weighted = F::ZERO;
         let mut total_avail_root = F::ZERO;
         let mut layer_avail = [F::ZERO; MAX_LAYERS];
         for l in 0..derived.nlaypg {
-            let wp_cm = derived.awilt[l] * derived.adep[l];
-            let av = (state.asmos[l] - wp_cm).max(F::ZERO);
+            let av = (state.asmos[l] - wp_cm[l]).max(F::ZERO);
             layer_avail[l] = av;
             total_avail_root += av;
             avail_weighted += av * fix.awtl[l];
         }
         if avail_weighted > F::EPS_GUARD && total_avail_root > F::EPS_GUARD {
-            let root_frac = if derived.twhc_root > F::EPS_GUARD {
-                (total_avail_root / derived.twhc_root).clamp_val(F::ZERO, F::ONE)
-            } else {
-                F::ZERO
-            };
-            let stress = (F::ONE - (-f(4.0) * root_frac).exp()).clamp_val(F::ZERO, F::ONE);
-            let target_tran = (ptran * stress).min(total_avail_root);
+            let target_tran = ptran.min(total_avail_root);
+            let scale = target_tran / avail_weighted;
             for l in 0..derived.nlaypg {
-                let take = (target_tran * (layer_avail[l] * fix.awtl[l]) / avail_weighted)
-                    .min(layer_avail[l]);
-                state.asmos[l] = (state.asmos[l] - take).max(derived.awilt[l] * derived.adep[l]);
+                let take = (scale * (layer_avail[l] * fix.awtl[l])).min(layer_avail[l]);
+                state.asmos[l] = (state.asmos[l] - take).max(wp_cm[l]);
                 tran += take;
             }
         }
@@ -243,8 +287,7 @@ pub fn step_hydrology<F: Float>(
     let mut av_top30 = F::ZERO;
     let mut depth_acc = F::ZERO;
     for l in 0..derived.nlayer {
-        let wp_cm = derived.awilt[l] * derived.adep[l];
-        let av = (state.asmos[l] - wp_cm).max(F::ZERO);
+        let av = (state.asmos[l] - wp_cm[l]).max(F::ZERO);
         av_prof += av;
         if l < derived.nlaypg {
             av_root += av;
@@ -258,8 +301,7 @@ pub fn step_hydrology<F: Float>(
     state.avh2o = [av_root, av_prof, av_top30];
 
     let top_awhc = ((derived.afiel[0] - derived.awilt[0]) * derived.adep[0]).max(F::EPS_GUARD);
-    let top_rwcf = ((state.asmos[0] - derived.awilt[0] * derived.adep[0]) / top_awhc)
-        .clamp_val(F::ZERO, F::ONE);
+    let top_rwcf = ((state.asmos[0] - wp_cm[0]) / top_awhc).clamp_val(F::ZERO, F::ONE);
 
     let aet = evap_subl + interception + bare_evap + tran;
     state.pet = pet;
@@ -268,34 +310,38 @@ pub fn step_hydrology<F: Float>(
 
     // 6. Per-layer saturated solute leaching (Manual §3.3 p. 3-6, A2-9/A2-10):
     // Linear function of saturated water flow `amov[l]` up to critical flow `fix.minlch` (18 cm).
-    let minlch_denom = fix.minlch.max(f(0.1));
-    let fleach = [derived.fleach_n, derived.fleach_p, derived.fleach_s];
-    let nelem = elements.nelem();
-    for e in 0..nelem {
-        if fleach[e] <= F::ZERO {
-            continue;
-        }
-        for l in (0..=leach_layer).rev() {
-            if amov[l] <= F::ZERO {
+    if any_amov {
+        let minlch_denom = fix.minlch.max(f(0.1));
+        let fleach = [derived.fleach_n, derived.fleach_p, derived.fleach_s];
+        let nelem = elements.nelem();
+        for e in 0..nelem {
+            if fleach[e] <= F::ZERO {
                 continue;
             }
-            let leach_scale = (amov[l] / minlch_denom).clamp_val(F::ZERO, F::ONE);
-            let frac = (leach_scale * fleach[e]).clamp_val(F::ZERO, f(0.95));
-            let amt = state.minerl[l][e] * frac;
-            if amt > F::ZERO {
-                let dst = if l == leach_layer {
-                    state.month_leach_e[e] += amt;
-                    PoolId::LeachingE(e)
-                } else {
-                    PoolId::Minerl(l + 1, e)
-                };
-                ledger.schedule(PoolId::Minerl(l, e), dst, amt);
+            for l in (0..=leach_layer).rev() {
+                if amov[l] <= F::ZERO {
+                    continue;
+                }
+                let leach_scale = (amov[l] / minlch_denom).clamp_val(F::ZERO, F::ONE);
+                let frac = (leach_scale * fleach[e]).clamp_val(F::ZERO, f(0.95));
+                let amt = state.minerl[l][e] * frac;
+                if amt > F::ZERO {
+                    let dst = if l == leach_layer {
+                        state.month_leach_e[e] += amt;
+                        PoolId::LeachingE(e)
+                    } else {
+                        PoolId::Minerl(l + 1, e)
+                    };
+                    ledger.schedule(PoolId::Minerl(l, e), dst, amt);
+                }
             }
         }
+        ledger.commit(state);
     }
-    ledger.commit(state);
 
-    let rel_water_surface = (state.avh2o[2] + gross_liquid) / pet.max(f(0.1));
+    let pet_denom = pet.max(f(0.1));
+    let rel_water_surface = (prev_avh2o_top30 + gross_liquid) / pet_denom;
+    let rel_water_root = (prev_avh2o_root + gross_liquid) / pet_denom;
 
     HydrologyStepResult {
         pet,
@@ -307,6 +353,7 @@ pub fn step_hydrology<F: Float>(
         amov_30cm,
         stream,
         rel_water_surface,
+        rel_water_root,
         top_rwcf,
     }
 }

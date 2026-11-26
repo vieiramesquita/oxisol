@@ -12,17 +12,19 @@ use crate::subsystems::co2::Co2Effects;
 use crate::subsystems::decomposition::gpdf;
 use crate::subsystems::mineralization::partition_residue;
 
-/// Moisture growth response curve (`pprdwc`, Parton et al. 1993).
+/// Texture-dependent linear moisture growth response (`pprdwc`, Manual §3.7.1 Fig. 3-9, A2-12).
+///
+/// Accounts for the Noy-Meir (1973) / Sala et al. (1988) reverse-texture effect:
+/// x-intercept `intcpt = pprpts[0] + pprpts[1] * wc` (where `wc = afiel[0] - awilt[0]`),
+/// reaching `1.0` (unrestricted growth) at `rel_water >= pprpts[2]`.
 #[inline]
-pub fn pprdwc<F: Float>(rel_water: F, pprpts: [F; 3]) -> F {
+pub fn pprdwc<F: Float>(wc: F, rel_water: F, pprpts: [F; 3]) -> F {
     let f = F::from_f64;
-    let r = rel_water.clamp_val(F::ZERO, f(3.0));
-    let p2 = pprpts[1].max(f(0.1));
-    let p3 = pprpts[2].max(f(0.1));
-    let ratio = ((r - pprpts[0]) / p2).clamp_val(F::ZERO, F::ONE);
-    // Smooth saturating response: 1 / (1 + exp(-...)) or CENTURY parabolic curve.
-    let curve = F::ONE - (F::ONE - ratio).powf(F::ONE + p3);
-    curve.clamp_val(F::ZERO, F::ONE)
+    let wc_clamped = wc.clamp_val(f(0.02), f(0.50));
+    let intcpt = pprpts[0] + pprpts[1] * wc_clamped;
+    let upper = pprpts[2].max(intcpt + f(0.05));
+    let r = rel_water.max(F::ZERO);
+    ((r - intcpt) / (upper - intcpt)).clamp_val(F::ZERO, F::ONE)
 }
 
 /// Dynamic monthly available mineral nutrient fraction `favail` (Manual A2-9):
@@ -63,7 +65,7 @@ pub fn step_crop<F: Float>(
     fix: &FixParams<F>,
     crop: &CropParams<F>,
     _weather: &MonthlyWeather<F>,
-    liquid_input: F,
+    rel_water_root: F,
     tree_shade_fac: F,
     grass_n_share: F,
     co2: &Co2Effects<F>,
@@ -89,8 +91,8 @@ pub fn step_crop<F: Float>(
             crop.ppdf[2],
             crop.ppdf[3],
         );
-        let rel_w = (state.avh2o[0] + liquid_input) / state.pet.max(f(0.1));
-        let w_fac = pprdwc(rel_w, fix.pprpts);
+        let wc = derived.afiel[0] - derived.awilt[0];
+        let w_fac = pprdwc(wc, rel_water_root, fix.pprpts);
 
         // Shading by standing dead litter and (in savannas) tree canopy cover.
         let dead_shade = (F::ONE - f(0.0008) * state.stdedc.total()).clamp_val(f(0.2), F::ONE);
@@ -137,7 +139,7 @@ pub fn step_crop<F: Float>(
             } else {
                 F::ONE
             };
-            let n_share = grass_n_share.clamp_val(F::ZERO, F::ONE);
+            let _n_share = grass_n_share.clamp_val(F::ZERO, F::ONE);
 
             let mut c_limit = pot_total;
             let mut r_min_ag = [F::ONE; MAX_ELEM];
@@ -148,7 +150,11 @@ pub fn step_crop<F: Float>(
 
             for e in 0..nelem {
                 let fav = element_favail(e, state.minerl[0][0], fix);
-                let soil_avail = state.mineral_sum(derived.nlaypg, e) * fav * rti * n_share;
+                let soil_tot = state.mineral_sum(derived.nlaypg, e);
+                // When `step_forest` already capped its uptake to `1 - grass_n_share`,
+                // `soil_tot` already excludes the tree uptake; use `grass_n_share` as a
+                // floorless share only if forest left surplus, avoiding double-penalizing grass.
+                let soil_avail = soil_tot * fav * rti;
                 e_avail[e] = soil_avail + state.crpstg[e];
 
                 r_min_ag[e] = (crop.pramn[e][0] + bio_frac * (crop.pramn[e][1] - crop.pramn[e][0]))
@@ -279,7 +285,8 @@ pub fn step_crop<F: Float>(
             } else {
                 F::ONE
             };
-            let drought_death = crop.fsdeth[0] * (F::ONE - prof_rel).powf(F::TWO);
+            let d = F::ONE - prof_rel;
+            let drought_death = crop.fsdeth[0] * d * d;
             let shade_death = if agc > crop.fsdeth[3] {
                 crop.fsdeth[2]
             } else {

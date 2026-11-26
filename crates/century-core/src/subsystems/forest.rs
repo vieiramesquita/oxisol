@@ -38,31 +38,31 @@ pub fn compute_tree_lai<F: Float>(state: &CellState<F>, tree: &TreeParams<F>) ->
 }
 
 /// Compute savanna tree-grass competition factors (Manual §3.7.3 p. 3-32/3-35, A2-23):
-/// returns `(tree_lai, grass_shade_fac, grass_n_share)`.
+/// returns `(tree_lai, grass_shade_fac, tree_n_share, grass_n_share)`.
 ///
 /// - Canopy light attenuation uses Beer-Lambert `exp(laitop * lai)`.
-/// - Basal area `ba = rlwodc * 2.5 / basfct` partitions mineral N between trees and grass
-///   scaled by `sitpot` and `basfc2`; closed-canopy forests (`rlwodc >> sitpot`) strongly
-///   suppress understory grass while open savannas allow vigorous grass-tree coexistence.
+/// - Basal area `ba = rlwodc * 2.5 / basfct` partitions mineral nutrients symmetrically
+///   between trees (`tree_n_share`) and grass (`grass_n_share = 1 - tree_n_share`) scaled
+///   by `sitpot` and `basfc2`, so open savannas and post-fire shrublands preserve vigorous
+///   herbaceous root biomass while closed forests command up to 98% of soil N.
 #[inline]
-pub fn savanna_competition<F: Float>(state: &CellState<F>, tree: &TreeParams<F>) -> (F, F, F) {
+pub fn savanna_competition<F: Float>(state: &CellState<F>, tree: &TreeParams<F>) -> (F, F, F, F) {
     let f = F::from_f64;
     let lai = compute_tree_lai(state, tree);
     let k_ext = tree.laitop.abs().max(f(0.2));
     let grass_shade_fac = (-k_ext * lai).exp().clamp_val(F::ZERO, F::ONE);
 
     // Tree dominance from basal area & large wood vs site potential (`sitpot`, Manual §3.7.3).
-    // Closed forests command ~85-98% of available mineral N; open savannas share N with grass.
     let basfct = tree.basfct.max(f(1.0));
     let basfc2 = tree.basfc2.max(f(0.1));
     let sitpot = tree.sitpot.max(f(200.0));
     let wood_c = state.rlwodc.total();
     let ba_term = (wood_c * f(2.5) / basfct) * basfc2;
     let half_ba = (sitpot / f(150.0)).max(f(1.0));
-    let tree_dom = (ba_term / (ba_term + half_ba)).clamp_val(f(0.20), f(0.98));
-    let grass_n_share = (F::ONE - tree_dom).clamp_val(f(0.02), f(0.80));
+    let tree_n_share = (ba_term / (ba_term + half_ba)).clamp_val(f(0.02), f(0.98));
+    let grass_n_share = F::ONE - tree_n_share;
 
-    (lai, grass_shade_fac, grass_n_share)
+    (lai, grass_shade_fac, tree_n_share, grass_n_share)
 }
 
 /// Execute monthly forest production, 5-part nutrient uptake, leaf drop, and woody mortality.
@@ -75,13 +75,19 @@ pub fn step_forest<F: Float>(
     tree: &TreeParams<F>,
     weather: &MonthlyWeather<F>,
     month: u8,
-    liquid_input: F,
+    rel_water_root: F,
+    tree_n_share: F,
     co2: &Co2Effects<F>,
     elements: ElementMode,
     ledger: &mut FlowLedger<F>,
 ) -> F {
     let f = F::from_f64;
     let lai = compute_tree_lai(state, tree);
+
+    // Reset annual deciduous leaf-drop latch during spring/summer warm months.
+    if month <= 6 || (month <= 8 && state.stemp > f(10.0) && !state.senm) {
+        state.decid_dropped = false;
+    }
 
     // --- 1. Potential & Actual Forest Production ---
     if state.forgrw {
@@ -94,13 +100,13 @@ pub fn step_forest<F: Float>(
             tree.ppdf[2],
             tree.ppdf[3],
         );
-        let rel_w = (state.avh2o[0] + liquid_input) / state.pet.max(f(0.1));
-        let w_fac = pprdwc(rel_w, fix.pprpts);
+        let wc = derived.afiel[0] - derived.awilt[0];
+        let w_fac = pprdwc(wc, rel_water_root, fix.pprpts);
 
         // Beer-Lambert canopy light interception.
         // For deciduous forests (DECID == 1, Manual §3.7.2 p. 3-32), spring leaf-out uses
-        // the stand's allometric canopy potential from large wood (`klai`, `maxlai`) so
-        // dormant winter abscission does not choke early-season canopy flush.
+        // the stand's allometric canopy potential from large wood (`klai`, `maxlai`) without
+        // inflating young post-fire saplings to artificial canopy closure.
         let k_ext = tree.laitop.abs().max(f(0.2));
         let wood_pot_lai = if tree.klai > F::EPS_GUARD {
             tree.maxlai * (state.rlwodc.total() / (tree.klai + state.rlwodc.total()))
@@ -108,16 +114,16 @@ pub fn step_forest<F: Float>(
             tree.maxlai
         };
         let eff_lai = if tree.decid == 1 {
-            lai.max(wood_pot_lai * f(0.75)).max(f(1.0))
+            lai.max(wood_pot_lai * f(0.50)).max(f(0.05))
         } else {
-            lai.max(f(0.2))
+            lai.max(f(0.05))
         };
-        let light_fac = (F::ONE - (-k_ext * eff_lai).exp()).clamp_val(f(0.05), F::ONE);
+        let light_fac = (F::ONE - (-k_ext * eff_lai).exp()).clamp_val(f(0.02), F::ONE);
 
-        // Gross potential forest production: PRDX(4) is in g biomass/m2/month (Manual A2-20),
-        // converted to g C/m2/month via 0.40 C/biomass factor (1 / 2.5), minus Ryan (1991)
-        // maintenance respiration of live foliage, fine roots, and live sapwood.
-        let gross_for = (tree.prdx4 * f(0.40)) * t_fac * w_fac * light_fac * co2.forest_prod;
+        // Gross potential forest production: PRDX(4) is maximum gross monthly C production
+        // (g C/m2/month, Manual §3.7.2), minus Ryan (1991) maintenance respiration of live
+        // foliage, fine roots, and live sapwood.
+        let gross_for = tree.prdx4 * t_fac * w_fac * light_fac * co2.forest_prod;
         let sap_frac = if tree.sapk > F::EPS_GUARD {
             (tree.sapk / (tree.sapk + state.rlwodc.total())).clamp_val(f(0.05), F::ONE)
         } else {
@@ -127,7 +133,7 @@ pub fn step_forest<F: Float>(
             + state.froote[0]
             + state.fbrche[0] * f(0.5)
             + (state.rlwode[0] + state.croote[0]) * sap_frac;
-        let q10_resp = f(2.0).powf(((t_avg - f(20.0)) / f(10.0)).clamp_val(f(-3.0), f(3.0)));
+        let q10_resp = (((t_avg - f(20.0)) * f(0.1)).clamp_val(f(-3.0), f(3.0))).exp2();
         // Ryan (1991): ~0.0106 g C / g N / day * 30 days/month.
         let maint_resp = (live_n * f(0.0106 * 30.0) * q10_resp).min(gross_for * f(0.75));
         let net_cap = (tree.prdx3 * t_fac * w_fac * light_fac * co2.forest_prod).max(F::ZERO);
@@ -157,7 +163,7 @@ pub fn step_forest<F: Float>(
             // Cap foliar allocation when leaf carbon approaches theoretical max LAI ceiling,
             // redirecting excess carbon to large wood and coarse roots (Manual §3.7.2).
             let max_leaf_c = if tree.btolai > F::EPS_GUARD {
-                (tree.maxlai / (f(2.5) * tree.btolai)).clamp_val(f(50.0), f(800.0))
+                (tree.maxlai / (f(2.5) * tree.btolai)).clamp_val(f(50.0), f(2000.0))
             } else {
                 f(400.0)
             };
@@ -171,14 +177,18 @@ pub fn step_forest<F: Float>(
             }
 
             let nelem = elements.nelem();
+            let n_share = tree_n_share.clamp_val(F::ZERO, F::ONE);
             let mut c_limit = pot_for;
             let mut e_avail = [F::ZERO; MAX_ELEM];
+            let mut soil_budget = [F::ZERO; MAX_ELEM];
             let mut min_e_per_c = [F::ZERO; MAX_ELEM];
             let mut max_e_per_c = [F::ZERO; MAX_ELEM];
 
             for e in 0..nelem {
                 let fav = element_favail(e, state.minerl[0][0], fix);
-                let soil_avail = state.mineral_sum(derived.nlaypg, e) * fav;
+                let budget_e = state.mineral_sum(derived.nlaypg, e) * n_share;
+                soil_budget[e] = budget_e;
+                let soil_avail = budget_e * fav;
                 e_avail[e] = soil_avail + state.forstg[e];
 
                 let mut mn = F::ZERO;
@@ -231,7 +241,7 @@ pub fn step_forest<F: Float>(
                     let from_stg = target_tot.min(state.forstg[e]);
                     let rem1 = (target_tot - from_stg).max(F::ZERO);
                     let soil_tot = state.mineral_sum(derived.nlaypg, e);
-                    let from_soil = rem1.min(soil_tot);
+                    let from_soil = rem1.min(soil_budget[e]).min(soil_tot);
                     let rem2 = (rem1 - from_soil).max(F::ZERO);
                     let from_sym = if e == 0 && tree.snfxmx > F::ZERO {
                         rem2.min(tree.snfxmx * actual_c)
@@ -296,13 +306,15 @@ pub fn step_forest<F: Float>(
     let m_idx = (month.clamp(1, 12) - 1) as usize;
 
     // 2a. Leaf drop: rleavc -> surface litter (with foliar nutrient retranslocation to forstg).
-    // For deciduous trees (DECID == 1, Manual §3.7.2 p. 3-27/3-32), trigger full seasonal
-    // abscission (`wooddr[0]`, typically 0.5-1.0) at autumn senescence (`senm`), dormancy
-    // (`!forgrw`), or autumn soil cooling (`month >= 10 && stemp < 8 °C`).
+    // For deciduous / mixed trees (DECID == 1, Manual §3.7.2 p. 3-27/3-32), trigger seasonal
+    // abscission (`wooddr[0]`, e.g. 1.0 for pure deciduous or 0.5 for mixed evergreen/deciduous)
+    // ONCE per autumn when senescence, dormancy, or autumn soil cooling (< 8 °C) arrives.
     let leaf_c = state.rleavc.total();
-    let is_decid_drop =
-        tree.decid == 1 && (state.senm || !state.forgrw || (month >= 10 && state.stemp < f(8.0)));
+    let is_decid_drop = tree.decid == 1
+        && !state.decid_dropped
+        && (state.senm || (!state.forgrw && month >= 9) || (month >= 10 && state.stemp < f(8.0)));
     let ldr = if is_decid_drop {
+        state.decid_dropped = true;
         let drop_rate = if tree.wooddr[0] > f(0.05) {
             tree.wooddr[0]
         } else {

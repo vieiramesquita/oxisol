@@ -187,7 +187,8 @@ pub fn route_decomp_nutrients<F: Float>(
             }
             if net_min > F::ZERO {
                 if e == 0 && fix.vlossg > F::ZERO {
-                    // Gross mineralization volatilization: vlossg * gross N released, capped at net_min.
+                    // Gross mineralization volatilization (Manual §3.5): vlossg * gross N released,
+                    // capped at net_min to maintain strict non-negativity.
                     let volat =
                         (e_rel * fix.vlossg.clamp_val(F::ZERO, F::from_f64(0.5))).min(net_min);
                     let to_min = net_min - volat;

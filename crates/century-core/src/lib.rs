@@ -41,5 +41,11 @@ pub use params::{
     TremParams,
 };
 pub use state::{AnnualOutput, CellState, MonthlyOutput, MonthlyWeather};
-pub use step::{initialize_cell, run_cell_from_state, run_cell_simulation, step_month, step_year};
-pub use subsystems::scheduler::{EventKind, Schedule, ScheduleBlock, ScheduledEvent};
+pub use step::{
+    initialize_cell, run_cell_from_state, run_cell_from_state_compiled, run_cell_simulation,
+    run_cell_simulation_compiled, step_month, step_year,
+};
+pub use subsystems::scheduler::{
+    CompiledBlock, CompiledSchedule, EventKind, ResolvedMonthEvents, Schedule, ScheduleBlock,
+    ScheduledEvent,
+};

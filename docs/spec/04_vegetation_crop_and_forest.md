@@ -8,7 +8,7 @@ $$P_{\text{pot}} = \text{prdx}_1 \cdot f_T(T_{\text{soil}}) \cdot f_W\!\left(\fr
 where:
 - `prdx[0]` is maximum gross monthly C production ($\text{g C}\cdot\text{m}^{-2}\cdot\text{mo}^{-1}$).
 - $f_T$ uses the crop generalized Poisson curve (`ppdf[0..3]`).
-- $f_W$ uses the quadratic moisture response (`pprdwc`) of relative moisture index $(\text{avh2o}_1 + P)/\text{PET}$.
+- $f_W$ uses the texture-dependent linear moisture response (`pprdwc`, Manual §3.7.1 Fig. 3-9) of beginning-of-month relative moisture index $(\text{avh2o}_{\text{prev},1} + P_{\text{liq}})/\text{PET}$, capturing the reverse-texture effect via x-intercept $\text{pprpts}_1 + \text{pprpts}_2 (\theta_{\text{fc},0} - \theta_{\text{wp},0})$ reaching $1.0$ at $\text{pprpts}_3$.
 - $f_{\text{shade}}$ attenuates herbaceous production by standing dead litter (`stdedc`) and, in savanna systems, tree canopy LAI (`rlai`).
 - $f_{\text{bio}}$ scales growth when live biomass is below full canopy (`biomax`).
 
@@ -34,8 +34,9 @@ For each active element $e \in \{0..N_{\text{elem}}-1\}$:
 
 ### 2.1 Potential Forest Production (`potfor`)
 During tree growing months (`forgrw == true`):
-$$P_{\text{for,pot}} = \text{prdx}_2 \cdot f_T(T_{\text{air}}) \cdot f_W \cdot f_{\text{LAI}}(\text{LAI}) \cdot f_{\text{CO2}}$$
-where leaf area index $\text{LAI} = \text{clamp}(\text{rleavc} \cdot 2.5 / \text{btolai},\ 0,\ \text{maxlai})$ (or allometric function of large wood `rlwodc` via `klai`), and light interception efficiency is $f_{\text{LAI}} = 1 - \exp(-\text{laitop} \cdot \text{LAI})$.
+$$P_{\text{for,gross}} = \text{prdx}_4 \cdot f_T(T_{\text{soil}}) \cdot f_W \cdot f_{\text{LAI}}(\text{LAI}_{\text{eff}}) \cdot f_{\text{CO2}}$$
+$$P_{\text{for,pot}} = \min\!\left(\max(0,\ P_{\text{for,gross}} - R_{\text{maint}}),\ \text{prdx}_3 \cdot f_T \cdot f_W \cdot f_{\text{LAI}} \cdot f_{\text{CO2}}\right)$$
+where $\text{prdx}_4$ is maximum gross monthly forest C production ($\text{g C}\cdot\text{m}^{-2}\cdot\text{mo}^{-1}$), $R_{\text{maint}}$ is Ryan (1991) $Q_{10}$ maintenance respiration of live foliage, fine roots, and live sapwood (`sapk`), leaf area index is bounded by wood allometry $\text{maxlai}\cdot \text{rlwodc}/(\text{klai} + \text{rlwodc})$, and light interception efficiency is $f_{\text{LAI}} = 1 - \exp(-|\text{laitop}|\cdot \text{LAI}_{\text{eff}})$.
 
 ### 2.2 Five-Compartment Wood/Foliage Allocation
 Total forest C production is allocated across 5 live components (`fcfrac[0..4]`):
@@ -47,11 +48,11 @@ Total forest C production is allocated across 5 live components (`fcfrac[0..4]`)
 
 Allocation can switch between juvenile (`fcfrac[*,0]`) and mature (`fcfrac[*,1]`) regimes based on total forest biomass or `basfc2`.
 
-### 2.3 Nutrient Uptake and Storage
-Available nutrients include `minerl[0..nlaypg][e]` (shared with grass in savanna systems via `sitpot` / competition) plus internal tree storage `forstg[e]` and symbiotic forest N fixation (`snfxmx[1]`). Target C:E limits are defined per component in `cerfor[min/max][comp][e]`.
+### 2.3 Nutrient Uptake, Storage, and Savanna Tree-Grass Partitioning
+In pure forests, trees access full root-zone mineral nutrients (`minerl[0..nlaypg][e]`) plus internal tree storage `forstg[e]` and symbiotic forest N fixation (`snfxmx[1]`). In savanna systems (`SystemKind::Savanna`), available soil mineral nutrients are partitioned symmetrically between trees (`tree_n_share` from basal area `rlwodc * 2.5 / basfct` relative to `sitpot`) and understory grass (`1 - tree_n_share`) while Beer-Lambert canopy shading attenuates grass light availability. Target C:E limits are defined per component in `cerfor[min/max][comp][e]`.
 
 ### 2.4 Forest Mortality and Litterfall (`wdeath`)
-- Monthly leaf drop (`leafdr[month]`, seasonal for deciduous or steady for evergreen) transfers `rleavc` $\to$ surface litter (`strucc[0]`/`metabc[0]`), retranslocating a fraction `forrtf[e]` of leaf nutrients into `forstg[e]`.
+- Monthly leaf drop (`leafdr[month]` for evergreen stands; once-per-autumn abscission fraction `wooddr[0]` for `decid == 1` deciduous and mixed stands) transfers `rleavc` $\to$ surface litter (`strucc[0]`/`metabc[0]`), retranslocating a fraction `forrtf[e]` of leaf nutrients into `forstg[e]`.
 - Fine root death (`wooddr[1]`) transfers `frootc` $\to$ soil litter (`strucc[1]`/`metabc[1]`).
 - Fine branch death (`wooddr[2]`) $\to$ `wood1c`; large wood death (`wooddr[3]`) $\to$ `wood2c`; coarse root death (`wooddr[4]`) $\to$ `wood3c`.
 

@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use century_core::{
-    run_cell_from_state, run_cell_simulation, AnnualOutput, CellDerivedParams, CellState, Float,
-    SimConfig,
+    run_cell_from_state_compiled, run_cell_simulation_compiled, AnnualOutput, CellDerivedParams,
+    CellState, CompiledSchedule, Float, SimConfig,
 };
 use century_io::checkpoint::NativeCellCheckpoint;
 use century_io::vemap::{PreloadedCell, PreloadedGrid};
@@ -70,8 +70,9 @@ pub struct GridRunStats {
 }
 
 #[inline]
-fn run_one_cell<F: Float>(
-    grid: &PreloadedGrid<F>,
+fn run_one_cell<'a, F: Float>(
+    grid: &'a PreloadedGrid<F>,
+    compiled_schedules: &HashMap<i32, CompiledSchedule<'a, F>>,
     cell: &PreloadedCell<F>,
     sim: &SimConfig,
     co2_by_year: Option<&[F]>,
@@ -79,26 +80,29 @@ fn run_one_cell<F: Float>(
 ) -> CellRunResult<F> {
     let biome = &grid.biomes[&cell.biome_id];
     let schedule = &grid.schedules[&cell.biome_id];
+    let compiled = &compiled_schedules[&cell.biome_id];
     let weather_slice = cell
         .transient_weather
         .as_deref()
         .unwrap_or(std::slice::from_ref(&cell.mean_weather));
     let (state, derived, last_annual) = if let Some((st, der)) = restart {
-        run_cell_from_state(
+        run_cell_from_state_compiled(
             st.clone(),
             der.clone(),
             biome,
             weather_slice,
             schedule,
+            compiled,
             co2_by_year,
             sim,
         )
     } else {
-        run_cell_simulation(
+        run_cell_simulation_compiled(
             biome,
             &cell.site_input,
             weather_slice,
             schedule,
+            compiled,
             co2_by_year,
             sim,
         )
@@ -114,6 +118,19 @@ fn run_one_cell<F: Float>(
     }
 }
 
+fn compile_biome_schedules<F: Float>(
+    grid: &PreloadedGrid<F>,
+) -> HashMap<i32, CompiledSchedule<'_, F>> {
+    grid.schedules
+        .iter()
+        .filter_map(|(&bid, sched)| {
+            grid.biomes
+                .get(&bid)
+                .map(|biome| (bid, CompiledSchedule::build(sched, biome)))
+        })
+        .collect()
+}
+
 /// Execute all cells serially on a single thread (baseline for scaling & profiling).
 pub fn run_grid_serial<F: Float>(
     grid: &PreloadedGrid<F>,
@@ -121,10 +138,11 @@ pub fn run_grid_serial<F: Float>(
     co2_by_year: Option<&[F]>,
 ) -> (Vec<CellRunResult<F>>, GridRunStats) {
     let t0 = Instant::now();
+    let compiled_schedules = compile_biome_schedules(grid);
     let results: Vec<CellRunResult<F>> = grid
         .cells
         .iter()
-        .map(|cell| run_one_cell(grid, cell, &cfg.sim, co2_by_year, None))
+        .map(|cell| run_one_cell(grid, &compiled_schedules, cell, &cfg.sim, co2_by_year, None))
         .collect();
     let elapsed = t0.elapsed().as_secs_f64().max(1.0e-9);
     let nyears = (cfg.sim.end_year - cfg.sim.start_year + 1).max(0) as usize;
@@ -163,6 +181,7 @@ pub fn run_grid_parallel_with_restart<F: Float>(
     checkpoints: Option<&[NativeCellCheckpoint<F>]>,
 ) -> (Vec<CellRunResult<F>>, GridRunStats) {
     let t0 = Instant::now();
+    let compiled_schedules = compile_biome_schedules(grid);
 
     let ckpt_map: Option<CheckpointMap<F>> = checkpoints.map(|slice| {
         slice
@@ -185,7 +204,14 @@ pub fn run_grid_parallel_with_restart<F: Float>(
                 idx_chunk.iter().map(|&idx| {
                     let cell = &grid.cells[idx];
                     let restart = ckpt_map.as_ref().and_then(|m| m.get(&(cell.row, cell.col)));
-                    run_one_cell(grid, cell, &cfg.sim, co2_by_year, restart)
+                    run_one_cell(
+                        grid,
+                        &compiled_schedules,
+                        cell,
+                        &cfg.sim,
+                        co2_by_year,
+                        restart,
+                    )
                 })
             })
             .collect::<Vec<CellRunResult<F>>>()

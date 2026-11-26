@@ -62,6 +62,8 @@ pub trait Float:
     }
     /// Natural exponential $e^x$.
     fn exp(self) -> Self;
+    /// Base-2 exponential $2^x$.
+    fn exp2(self) -> Self;
     /// Natural logarithm $\ln(x)$.
     fn ln(self) -> Self;
     /// Square root $\sqrt{x}$.
@@ -129,6 +131,10 @@ impl Float for f32 {
     #[inline(always)]
     fn exp(self) -> Self {
         f32::exp(self)
+    }
+    #[inline(always)]
+    fn exp2(self) -> Self {
+        f32::exp2(self)
     }
     #[inline(always)]
     fn ln(self) -> Self {
@@ -219,6 +225,10 @@ impl Float for f64 {
     #[inline(always)]
     fn exp(self) -> Self {
         f64::exp(self)
+    }
+    #[inline(always)]
+    fn exp2(self) -> Self {
+        f64::exp2(self)
     }
     #[inline(always)]
     fn ln(self) -> Self {

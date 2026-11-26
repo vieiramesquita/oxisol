@@ -41,24 +41,25 @@ Given solar declination $\delta = 0.4014\,\sin\!\left(\frac{2\pi (\text{DOY} - 7
 - `ScientificClean`: $\cos H_0 = \text{clamp}(-\tan \phi_{\text{rad}} \cdot \tan \delta,\ -1,\ 1)$, $\text{daylen} = \frac{24}{\pi}\arccos(\cos H_0)$ (note the legacy V4.5 bug omitting $\tan(\delta)$ is documented in Spec 07).
 
 ## 3. Monthly Water Balance
-1. **Snow Accumulation and Melt**:
-   - If $T_{\text{mean}} \le 0^\circ\text{C}$, precipitation accumulates into `snow` pack; sublimation reduces snow up to $0.87\,\text{PET}$.
-   - If $T_{\text{mean}} > 0^\circ\text{C}$, snowmelt $M = \min(\text{snow},\ \text{tmelt}_2 (T_{\text{mean}} - \text{tmelt}_1))$ enters liquid water input `winputs`.
+1. **Snow Accumulation, Melt, and Sublimation**:
+   - If $T_{\text{mean}} \le 0^\circ\text{C}$, precipitation enters `snow`; otherwise it enters `liquid_input`.
+   - Whenever $\text{snow} > 0$ and $T_{\text{mean}} > \text{tmelt}_1$ (where $\text{tmelt}_1$ may be sub-zero, e.g. $-6^\circ\text{C}$), snowmelt $M = \min(\text{snow},\ \text{tmelt}_2 (T_{\text{mean}} - \text{tmelt}_1))$ enters `liquid_input` before sublimation.
+   - Any remaining `snow > 0` sublimates up to $0.87\,\text{PET}_{\text{rem}}$.
 2. **Canopy & Litter Interception**:
-   - Interception $I = \min\!\left(P_{\text{liq}},\ \text{PET},\ \text{fwloss}_1 \cdot P_{\text{liq}} \cdot (a_1 + b_1 B_{\text{live}} + c_1 B_{\text{dead}})\right)$ (clamped to available water and PET).
+   - Interception $I = \min\!\left(P_{\text{liq}},\ \text{PET}_{\text{rem}},\ 0.5\,\text{fwloss}_1\,\text{PET}_{\text{rem}},\ \text{fwloss}_1 \cdot P_{\text{liq}} \cdot (0.0003\,B_{\text{live}} + 0.0006\,B_{\text{dead}})\right)$.
 3. **Infiltration, Redistribution, and Runoff**:
    - Remaining liquid input infiltrates layer by layer from top ($i=0$) to bottom (`nlayer-1`).
-   - Excess above field capacity $\text{fc}_i = \theta_{\text{fc},i}\Delta z_i$ drains into layer $i+1$.
-   - Excess leaving the bottom layer (`nlayer-1`) enters deep storage (`asmos[nlayer]`) or splits into stormflow (`stormf`), baseflow (`basef`), and deep drainage (`drain`).
+   - Excess above field capacity $\text{fc}_i = \theta_{\text{fc},i}\Delta z_i$ drains into layer $i+1$; drainage impedance (`drain < 1`) modulates anaerobic decomposition (`anerb`) without ponding excess water above field capacity in upper layers.
+   - Excess leaving the bottom layer (`nlayer-1`) enters deep storage (`asmos[nlayer]`) and partitions into stormflow (`stormf`) and baseflow (`basef`).
 4. **Bare Soil Evaporation**:
-   - Limited by remaining PET, shading by live/dead biomass, and surface water in layer 0 above a residual threshold:
-     $$E_{\text{soil}} = \text{fwloss}_2 \cdot \text{PET}_{\text{rem}} \cdot \exp(-0.0035\,B_{\text{total}}) \cdot f_{\text{evap}}(\theta_0)$$
+   - Pre-infiltration bare-soil evaporation of incoming liquid precipitation attenuates exponentially with total surface biomass (`fwloss[1]`).
 5. **Transpiration**:
-   - Driven by live biomass (`aglivc`, `rleavc`), `fwloss_3`, CO₂ stomatal conductance modifier (`co2ctr`), and remaining PET, extracted proportionally to available water across rooting layers `0..nlaypg`.
-6. **Available Water Indices**:
+   - Driven by live biomass (`1 - exp(-0.020 * B_live)`), `fwloss[2]`, CO₂ stomatal conductance modifier (`co2ctr`), and PET (capped at `PET_rem`), extracted proportionally to available water weighted by `awtl[i]` across rooting layers `0..nlaypg`.
+6. **Available Water Indices & Pre-Transpiration Moisture Ratios**:
    - `avh2o[0]` (plant-available water in root zone `0..nlaypg`)
    - `avh2o[1]` (plant-available water in full profile `0..nlayer`)
-   - `avh2o[2]` (plant-available water in top 30 cm — used by decomposition moisture modifier `wfunc`)
+   - `avh2o[2]` (plant-available water in top 30 cm)
+   - Moisture ratios for decomposition (`rel_water_surface = (avh2o_prev[2] + liquid_input) / PET`) and plant growth (`rel_water_root = (avh2o_prev[0] + liquid_input) / PET`) use beginning-of-month `avh2o` prior to monthly transpiration withdrawal.
 
 ## 4. Solute Leaching
 When vertical water flux $F_{\text{leach}}$ (cm/month) exits the active leaching layer (`nlaypg` or 30 cm boundary) and exceeds critical flux `h2olec` (`cm`):

@@ -282,8 +282,12 @@ impl<F: Float> FlowLedger<F> {
 
     /// Atomically apply all queued flows (inline + any spill) to `state`, enforcing pool
     /// non-negativity, preserving isotope ratios, and updating boundary conservation counters.
+    #[inline]
     pub fn commit(&mut self, state: &mut CellState<F>) {
         let count = self.len;
+        if count == 0 && self.spill.is_empty() {
+            return;
+        }
         self.len = 0;
         for i in 0..count {
             apply_one_flow(state, self.flows[i]);
@@ -325,6 +329,70 @@ fn apply_one_flow<F: Float>(state: &mut CellState<F>, fl: Flow<F>) {
             }
         }
     }
+}
+
+/// Atomically transfer carbon from `src` to `dst` preserving isotope ratios.
+/// Guaranteed mass-conserving (internal transfer; boundary counters unchanged).
+#[inline(always)]
+pub fn transfer_c_direct<F: Float>(
+    src: &mut CarbonPool<F>,
+    dst: &mut CarbonPool<F>,
+    amount: F,
+) -> F {
+    if amount <= F::ZERO {
+        return F::ZERO;
+    }
+    let (actual, lf) = src.sub_preserving_ratio(amount);
+    if actual > F::ZERO {
+        dst.add(actual, lf);
+    }
+    actual
+}
+
+/// Atomically export carbon from `src` to an external boundary (respiration or leaching),
+/// updating `cum_c_out` identically to `FlowLedger::commit`.
+#[inline(always)]
+pub fn export_c_direct<F: Float>(src: &mut CarbonPool<F>, cum_c_out: &mut F, amount: F) -> F {
+    if amount <= F::ZERO {
+        return F::ZERO;
+    }
+    let (actual, _lf) = src.sub_preserving_ratio(amount);
+    if actual > F::ZERO {
+        *cum_c_out += actual;
+    }
+    actual
+}
+
+/// Atomically transfer a nutrient element between two internal pools (`src -> dst`),
+/// clamping to pool non-negativity identically to `FlowLedger::commit`.
+#[inline(always)]
+pub fn transfer_e_direct<F: Float>(src: &mut F, dst: &mut F, amount: F) -> F {
+    if amount <= F::ZERO {
+        return F::ZERO;
+    }
+    let avail = (*src).max(F::ZERO);
+    let actual = amount.min(avail);
+    if actual > F::ZERO {
+        *src = (*src - actual).max(F::ZERO);
+        *dst += actual;
+    }
+    actual
+}
+
+/// Atomically export a nutrient element from `src` to an external boundary (volatilization or
+/// leaching), updating `cum_e_out` identically to `FlowLedger::commit`.
+#[inline(always)]
+pub fn export_e_direct<F: Float>(src: &mut F, cum_e_out: &mut F, amount: F) -> F {
+    if amount <= F::ZERO {
+        return F::ZERO;
+    }
+    let avail = (*src).max(F::ZERO);
+    let actual = amount.min(avail);
+    if actual > F::ZERO {
+        *src = (*src - actual).max(F::ZERO);
+        *cum_e_out += actual;
+    }
+    actual
 }
 
 /// Compute exact mass-balance conservation error between two snapshots.

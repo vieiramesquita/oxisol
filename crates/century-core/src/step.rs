@@ -13,14 +13,14 @@ use crate::subsystems::{
     crop::step_crop,
     decomposition::{step_decomposition, update_abiotic_factors},
     forest::{savanna_competition, step_forest},
-    hydrology::{linacre_pet, step_hydrology},
+    hydrology::{linacre_pet, step_hydrology_with_pet},
     management::{
         apply_cultivation, apply_erosion, apply_fertilizer, apply_fire, apply_grazing,
         apply_harvest, apply_irrigation, apply_omad, apply_trem,
     },
     mineralization::{apply_atmospheric_inputs, partition_residue},
     phosphorus_sulfur::step_phosphorus_sulfur,
-    scheduler::{EventKind, Schedule},
+    scheduler::{CompiledSchedule, EventKind, ResolvedMonthEvents, Schedule},
     soil_temp::compute_soil_temp,
 };
 
@@ -319,14 +319,74 @@ pub fn step_month<F: Float>(
 ) -> (MonthlyOutput<F>, Option<MassBalanceReport<F>>) {
     let mut ledger = FlowLedger::<F>::new();
     let mut cached = CachedParams::resolve(biome, selection);
-    step_month_inner(
+    let mut events_buf: [Option<&EventKind>; 24] = [None; 24];
+    let n_events = schedule.events_for_buf(year, month, &mut events_buf);
+    let mut resolved = ResolvedMonthEvents::default();
+    for ev in events_buf[..n_events].iter().flatten() {
+        match ev {
+            EventKind::Crop(name) => {
+                resolved.crop = Some((name.as_str(), biome.crops.get(name.as_str())));
+            }
+            EventKind::Tree(name) => {
+                resolved.tree = Some((name.as_str(), biome.trees.get(name.as_str())));
+            }
+            EventKind::Frst => resolved.set_crpgrw = Some(true),
+            EventKind::Last => resolved.set_crpgrw = Some(false),
+            EventKind::Senm => resolved.senm = true,
+            EventKind::Pltm => {
+                resolved.set_crpgrw = Some(true);
+                resolved.planted = true;
+            }
+            EventKind::Tfst => resolved.set_forgrw = Some(true),
+            EventKind::Tlst => resolved.set_forgrw = Some(false),
+            EventKind::Irri(n) => {
+                resolved.irri = biome.irris.get(n.as_str());
+                resolved.has_any_mgmt = true;
+            }
+            EventKind::Fert(n) => {
+                resolved.fert = biome.ferts.get(n.as_str());
+                resolved.has_any_mgmt = true;
+            }
+            EventKind::Omad(n) => {
+                resolved.omad = biome.omads.get(n.as_str());
+                resolved.has_any_mgmt = true;
+            }
+            EventKind::Cult(n) => {
+                resolved.cult = biome.cults.get(n.as_str());
+                resolved.has_any_mgmt = true;
+            }
+            EventKind::Graz(n) => {
+                resolved.graz = biome.grazs.get(n.as_str());
+                resolved.has_any_mgmt = true;
+            }
+            EventKind::Harv(n) => {
+                resolved.harv = biome.harvs.get(n.as_str());
+                resolved.has_any_mgmt = true;
+            }
+            EventKind::Fire(n) => {
+                resolved.fire = biome.fires.get(n.as_str());
+                resolved.has_any_mgmt = true;
+            }
+            EventKind::Trem(n) => {
+                resolved.trem = biome.trems.get(n.as_str());
+                resolved.has_any_mgmt = true;
+            }
+            EventKind::Erod(r) => {
+                resolved.erod = Some(F::from_f64(*r));
+                resolved.has_any_mgmt = true;
+            }
+        }
+    }
+    step_month_resolved(
         state,
         derived,
         biome,
-        selection,
+        Some(selection),
         &mut cached,
-        schedule,
+        schedule.label_year,
+        resolved,
         weather,
+        None,
         year,
         month,
         co2_ppm,
@@ -335,15 +395,18 @@ pub fn step_month<F: Float>(
     )
 }
 
+#[inline]
 #[allow(clippy::too_many_arguments)]
-fn step_month_inner<'a, F: Float>(
+fn step_month_resolved<'a, F: Float>(
     state: &mut CellState<F>,
     derived: &CellDerivedParams<F>,
     biome: &'a RawBiomeParams<F>,
-    selection: &mut ActiveSelection,
+    mut selection: Option<&mut ActiveSelection>,
     cached: &mut CachedParams<'a, F>,
-    schedule: &Schedule,
+    label_year: i32,
+    ev: ResolvedMonthEvents<'a, F>,
     weather: &MonthlyWeather<F>,
+    pet_override: Option<F>,
     year: i32,
     month: u8,
     co2_ppm: F,
@@ -372,13 +435,13 @@ fn step_month_inner<'a, F: Float>(
 
     state.reset_monthly_diagnostics();
     state.co2_ppm = co2_ppm;
-    state.senm = false;
+    state.senm = ev.senm;
 
     // Update isotope atmospheric labeled fraction when labeling is active.
     state.atm_lab_frac = match config.isotope {
         crate::config::IsotopeMode::Unlabeled => F::ZERO,
         crate::config::IsotopeMode::C14 => {
-            if schedule.label_year >= 0 && year >= schedule.label_year {
+            if label_year >= 0 && year >= label_year {
                 f(1.0)
             } else {
                 F::ZERO
@@ -398,66 +461,42 @@ fn step_month_inner<'a, F: Float>(
         state.fire_frtsh *= f(0.5);
     }
 
-    // 1. Resolve scheduled events for (year, month) using a zero-allocation stack buffer.
-    let mut events_buf: [Option<&EventKind>; 24] = [None; 24];
-    let n_events = schedule.events_for_buf(year, month, &mut events_buf);
-
-    let mut irri_opt: Option<&str> = None;
-    let mut fert_opt: Option<&str> = None;
-    let mut omad_opt: Option<&str> = None;
-    let mut cult_opt: Option<&str> = None;
-    let mut graz_opt: Option<&str> = None;
-    let mut harv_opt: Option<&str> = None;
-    let mut fire_opt: Option<&str> = None;
-    let mut trem_opt: Option<&str> = None;
-    let mut erod_rate: Option<F> = None;
-    let mut planted = false;
-
-    for ev in events_buf[..n_events].iter().flatten() {
-        match ev {
-            EventKind::Crop(name) => {
-                if selection.crop_name != *name {
-                    selection.crop_name.clone_from(name);
-                    cached.crop = biome.crops.get(name.as_str());
-                }
-                if state.system == SystemKind::Forest {
-                    state.system = SystemKind::Savanna;
-                }
+    // 1. Apply O(1) pre-resolved schedule events for (year, month).
+    if let Some((name, cp)) = ev.crop {
+        cached.crop = cp;
+        if let Some(sel) = selection.as_deref_mut() {
+            if sel.crop_name != name {
+                sel.crop_name.clear();
+                sel.crop_name.push_str(name);
             }
-            EventKind::Tree(name) => {
-                if selection.tree_name != *name {
-                    selection.tree_name.clone_from(name);
-                    cached.tree = biome.trees.get(name.as_str());
-                }
-                if state.system == SystemKind::GrasslandCrop {
-                    state.system = SystemKind::Savanna;
-                }
-            }
-            EventKind::Frst => state.crpgrw = true,
-            EventKind::Last => state.crpgrw = false,
-            EventKind::Senm => state.senm = true,
-            EventKind::Pltm => {
-                state.crpgrw = true;
-                planted = true;
-            }
-            EventKind::Tfst => state.forgrw = true,
-            EventKind::Tlst => state.forgrw = false,
-            EventKind::Irri(n) => irri_opt = Some(n.as_str()),
-            EventKind::Fert(n) => fert_opt = Some(n.as_str()),
-            EventKind::Omad(n) => omad_opt = Some(n.as_str()),
-            EventKind::Cult(n) => cult_opt = Some(n.as_str()),
-            EventKind::Graz(n) => graz_opt = Some(n.as_str()),
-            EventKind::Harv(n) => harv_opt = Some(n.as_str()),
-            EventKind::Fire(n) => fire_opt = Some(n.as_str()),
-            EventKind::Trem(n) => trem_opt = Some(n.as_str()),
-            EventKind::Erod(r) => erod_rate = Some(f(*r)),
         }
+        if state.system == SystemKind::Forest {
+            state.system = SystemKind::Savanna;
+        }
+    }
+    if let Some((name, tp)) = ev.tree {
+        cached.tree = tp;
+        if let Some(sel) = selection {
+            if sel.tree_name != name {
+                sel.tree_name.clear();
+                sel.tree_name.push_str(name);
+            }
+        }
+        if state.system == SystemKind::GrasslandCrop {
+            state.system = SystemKind::Savanna;
+        }
+    }
+    if let Some(v) = ev.set_crpgrw {
+        state.crpgrw = v;
+    }
+    if let Some(v) = ev.set_forgrw {
+        state.forgrw = v;
     }
 
     ledger.clear();
 
     // Seed crop if planted with zero live shoots.
-    if planted && state.aglivc.total() < f(1.0) {
+    if ev.planted && state.aglivc.total() < f(1.0) {
         ledger.schedule(PoolId::ExternalInputC, PoolId::AglivC, f(2.0));
         ledger.schedule(PoolId::ExternalInputC, PoolId::BglivC, f(2.0));
         for e in 0..config.elements.nelem() {
@@ -472,23 +511,21 @@ fn step_month_inner<'a, F: Float>(
     let tree_params = cached.tree;
     let co2 = compute_co2_effects(co2_ppm, &biome.fix, crop_params, tree_params);
 
+    let pet_val = pet_override
+        .unwrap_or_else(|| linacre_pet(month, weather, derived, &biome.fix, config.profile));
+
     // 2. Irrigation water calculation (applied into hydrology).
-    let irri_cm = if let Some(name) = irri_opt {
-        if let Some(ip) = biome.irris.get(name) {
-            let pet_est = linacre_pet(month, weather, derived, &biome.fix, config.profile);
-            apply_irrigation(
-                state,
-                derived,
-                &biome.site_defaults,
-                ip,
-                weather.precip_cm.max(F::ZERO),
-                pet_est,
-                config.elements,
-                ledger,
-            )
-        } else {
-            F::ZERO
-        }
+    let irri_cm = if let Some(ip) = ev.irri {
+        apply_irrigation(
+            state,
+            derived,
+            &biome.site_defaults,
+            ip,
+            weather.precip_cm.max(F::ZERO),
+            pet_val,
+            config.elements,
+            ledger,
+        )
     } else {
         F::ZERO
     };
@@ -499,16 +536,15 @@ fn step_month_inner<'a, F: Float>(
     } else {
         co2.crop_transp
     };
-    let hydro = step_hydrology(
+    let hydro = step_hydrology_with_pet(
         state,
         derived,
         &biome.fix,
         weather,
-        month,
+        pet_val,
         irri_cm,
         transp_mult,
         config.elements,
-        config.profile,
         ledger,
     );
     compute_soil_temp(state, &biome.fix, weather);
@@ -542,35 +578,28 @@ fn step_month_inner<'a, F: Float>(
         config.elements,
         ledger,
     );
-    if let Some(name) = fert_opt {
-        if let Some(fp) = biome.ferts.get(name) {
+    if ev.has_any_mgmt {
+        if let Some(fp) = ev.fert {
             apply_fertilizer(state, fp, config.elements, ledger);
         }
-    }
-    if let Some(name) = omad_opt {
-        if let Some(op) = biome.omads.get(name) {
+        if let Some(op) = ev.omad {
             apply_omad(state, &biome.fix, op, config.elements, ledger);
         }
-    }
-    if let Some(name) = cult_opt {
-        if let Some(cp) = biome.cults.get(name) {
+        if let Some(cp) = ev.cult {
             apply_cultivation(state, &biome.fix, cp, config.elements, ledger);
         }
     }
 
     // 5. Forest and Crop vegetation production & senescence.
-    // Per Manual §3.7.3 (Savanna): compute canopy shading and basal-area N share;
-    // woody canopy accesses its share of mineral N while understory grass is shaded
-    // by tree LAI and constrained by remaining soil mineral N.
-    let (tree_shade_fac, grass_n_share) = if state.system == SystemKind::Savanna {
+    let (tree_shade_fac, tree_n_share, grass_n_share) = if state.system == SystemKind::Savanna {
         if let Some(tp) = tree_params {
-            let (_lai, shade, g_share) = savanna_competition(state, tp);
-            (shade, g_share)
+            let (_lai, shade, t_share, g_share) = savanna_competition(state, tp);
+            (shade, t_share, g_share)
         } else {
-            (F::ONE, F::ONE)
+            (F::ONE, F::ONE, F::ONE)
         }
     } else {
-        (F::ONE, F::ONE)
+        (F::ONE, F::ONE, F::ONE)
     };
 
     if state.system.has_forest() {
@@ -582,7 +611,8 @@ fn step_month_inner<'a, F: Float>(
                 tp,
                 weather,
                 month,
-                hydro.liquid_input,
+                hydro.rel_water_root,
+                tree_n_share,
                 &co2,
                 config.elements,
                 ledger,
@@ -598,7 +628,7 @@ fn step_month_inner<'a, F: Float>(
                 &biome.fix,
                 cp,
                 weather,
-                hydro.liquid_input,
+                hydro.rel_water_root,
                 tree_shade_fac,
                 grass_n_share,
                 &co2,
@@ -609,28 +639,22 @@ fn step_month_inner<'a, F: Float>(
     }
 
     // 6. Management disturbances (GRAZ, HARV, FIRE, TREM, EROD).
-    if let Some(name) = graz_opt {
-        if let Some(gp) = biome.grazs.get(name) {
+    if ev.has_any_mgmt {
+        if let Some(gp) = ev.graz {
             apply_grazing(state, &biome.fix, gp, config.elements, ledger);
         }
-    }
-    if let Some(name) = harv_opt {
-        if let (Some(hp), Some(cp)) = (biome.harvs.get(name), crop_params) {
+        if let (Some(hp), Some(cp)) = (ev.harv, crop_params) {
             apply_harvest(state, &biome.fix, cp, hp, config.elements, ledger);
         }
-    }
-    if let Some(name) = fire_opt {
-        if let Some(fp) = biome.fires.get(name) {
+        if let Some(fp) = ev.fire {
             apply_fire(state, fp, config.elements, ledger);
         }
-    }
-    if let Some(name) = trem_opt {
-        if let Some(tp) = biome.trems.get(name) {
+        if let Some(tp) = ev.trem {
             apply_trem(state, &biome.fix, tree_params, tp, config.elements, ledger);
         }
-    }
-    if let Some(er) = erod_rate {
-        apply_erosion(state, derived, &biome.fix, er, config.elements, ledger);
+        if let Some(er) = ev.erod {
+            apply_erosion(state, derived, &biome.fix, er, config.elements, ledger);
+        }
     }
 
     // 7. Decomposition & P/S Geochemistry (organic leaching driven by 30 cm water flux).
@@ -643,14 +667,16 @@ fn step_month_inner<'a, F: Float>(
         config.elements,
         ledger,
     );
-    step_phosphorus_sulfur(
-        state,
-        derived,
-        &biome.fix,
-        &biome.site_defaults,
-        config.elements,
-        ledger,
-    );
+    if config.elements != crate::config::ElementMode::CarbonNitrogen {
+        step_phosphorus_sulfur(
+            state,
+            derived,
+            &biome.fix,
+            &biome.site_defaults,
+            config.elements,
+            ledger,
+        );
+    }
 
     let mut total_h2o = F::ZERO;
     for l in 0..derived.nlayer {
@@ -699,14 +725,18 @@ pub fn step_year<F: Float>(
 ) -> AnnualOutput<F> {
     let mut ledger = FlowLedger::<F>::new();
     let mut cached = CachedParams::resolve(biome, selection);
-    step_year_inner(
+    let compiled = CompiledSchedule::build(schedule, biome);
+    let mut block_cursor = 0usize;
+    step_year_compiled(
         state,
         derived,
         biome,
-        selection,
+        Some(selection),
         &mut cached,
-        schedule,
+        &compiled,
+        &mut block_cursor,
         year_weather,
+        None,
         year,
         co2_ppm,
         config,
@@ -715,14 +745,16 @@ pub fn step_year<F: Float>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn step_year_inner<'a, F: Float>(
+fn step_year_compiled<'a, F: Float>(
     state: &mut CellState<F>,
     derived: &CellDerivedParams<F>,
     biome: &'a RawBiomeParams<F>,
-    selection: &mut ActiveSelection,
+    mut selection: Option<&mut ActiveSelection>,
     cached: &mut CachedParams<'a, F>,
-    schedule: &Schedule,
+    compiled: &CompiledSchedule<'a, F>,
+    block_cursor: &mut usize,
     year_weather: &[MonthlyWeather<F>; 12],
+    cached_pet: Option<&[F; 12]>,
     year: i32,
     co2_ppm: F,
     config: &SimConfig,
@@ -737,16 +769,20 @@ fn step_year_inner<'a, F: Float>(
 
     for m in 0..12 {
         ann_ppt += year_weather[m].precip_cm.max(F::ZERO);
-        let (mo, audit) = step_month_inner(
+        let month = (m + 1) as u8;
+        let ev = compiled.events_for_cursor(year, month, block_cursor);
+        let (mo, audit) = step_month_resolved(
             state,
             derived,
             biome,
-            selection,
+            selection.as_deref_mut(),
             cached,
-            schedule,
+            compiled.label_year,
+            ev,
             &year_weather[m],
+            cached_pet.map(|p| p[m]),
             year,
-            (m + 1) as u8,
+            month,
             co2_ppm,
             config,
             ledger,
@@ -787,15 +823,16 @@ fn step_year_inner<'a, F: Float>(
     }
 }
 
-/// Continue a multi-year (e.g. transient climate / CO₂) simulation from an existing
-/// `(CellState, CellDerivedParams)` checkpoint with zero per-month allocation or HashMap lookup.
+/// Continue a multi-year simulation from an existing `(CellState, CellDerivedParams)` using
+/// a pre-compiled [`CompiledSchedule`] (zero per-month allocation, scan, or HashMap lookup).
 #[allow(clippy::too_many_arguments)]
-pub fn run_cell_from_state<F: Float>(
+pub fn run_cell_from_state_compiled<'a, F: Float>(
     mut state: CellState<F>,
     derived: CellDerivedParams<F>,
-    biome: &RawBiomeParams<F>,
+    biome: &'a RawBiomeParams<F>,
     weather_by_year: &[[MonthlyWeather<F>; 12]],
-    schedule: &Schedule,
+    schedule: &'a Schedule,
+    compiled: &CompiledSchedule<'a, F>,
     co2_by_year: Option<&[F]>,
     config: &SimConfig,
 ) -> (CellState<F>, CellDerivedParams<F>, AnnualOutput<F>) {
@@ -803,14 +840,34 @@ pub fn run_cell_from_state<F: Float>(
         !weather_by_year.is_empty(),
         "weather_by_year must not be empty"
     );
-    let mut selection = ActiveSelection::from_schedule(schedule);
-    let mut cached = CachedParams::resolve(biome, &selection);
+    let mut cached = CachedParams {
+        crop: if schedule.initial_crop.is_empty() {
+            None
+        } else {
+            biome.crops.get(schedule.initial_crop.as_str())
+        },
+        tree: if schedule.initial_tree.is_empty() {
+            None
+        } else {
+            biome.trees.get(schedule.initial_tree.as_str())
+        },
+    };
     let mut ledger = FlowLedger::<F>::new();
+    let mut block_cursor = 0usize;
 
     let default_co2 = config
         .co2_ppm_override
         .map(F::from_f64)
         .unwrap_or(biome.fix.co2ppm[0]);
+
+    let static_pet: Option<[F; 12]> = if weather_by_year.len() == 1 {
+        let w0 = &weather_by_year[0];
+        Some(core::array::from_fn(|m| {
+            linacre_pet((m + 1) as u8, &w0[m], &derived, &biome.fix, config.profile)
+        }))
+    } else {
+        None
+    };
 
     let mut last_out = AnnualOutput::default();
     let total_years = (config.end_year - config.start_year + 1).max(0) as usize;
@@ -820,14 +877,16 @@ pub fn run_cell_from_state<F: Float>(
         let co2 = co2_by_year
             .and_then(|arr| arr.get(idx).copied())
             .unwrap_or(default_co2);
-        last_out = step_year_inner(
+        last_out = step_year_compiled(
             &mut state,
             &derived,
             biome,
-            &mut selection,
+            None,
             &mut cached,
-            schedule,
+            compiled,
+            &mut block_cursor,
             w,
+            static_pet.as_ref(),
             year,
             co2,
             config,
@@ -836,6 +895,60 @@ pub fn run_cell_from_state<F: Float>(
     }
 
     (state, derived, last_out)
+}
+
+/// Continue a multi-year (e.g. transient climate / CO₂) simulation from an existing
+/// `(CellState, CellDerivedParams)` checkpoint with zero per-month allocation or HashMap lookup.
+#[allow(clippy::too_many_arguments)]
+pub fn run_cell_from_state<F: Float>(
+    state: CellState<F>,
+    derived: CellDerivedParams<F>,
+    biome: &RawBiomeParams<F>,
+    weather_by_year: &[[MonthlyWeather<F>; 12]],
+    schedule: &Schedule,
+    co2_by_year: Option<&[F]>,
+    config: &SimConfig,
+) -> (CellState<F>, CellDerivedParams<F>, AnnualOutput<F>) {
+    let compiled = CompiledSchedule::build(schedule, biome);
+    run_cell_from_state_compiled(
+        state,
+        derived,
+        biome,
+        weather_by_year,
+        schedule,
+        &compiled,
+        co2_by_year,
+        config,
+    )
+}
+
+/// Run a complete multi-year simulation using a pre-compiled [`CompiledSchedule`].
+#[allow(clippy::too_many_arguments)]
+pub fn run_cell_simulation_compiled<'a, F: Float>(
+    biome: &'a RawBiomeParams<F>,
+    cell_input: &CellSiteInput<F>,
+    weather_by_year: &[[MonthlyWeather<F>; 12]],
+    schedule: &'a Schedule,
+    compiled: &CompiledSchedule<'a, F>,
+    co2_by_year: Option<&[F]>,
+    config: &SimConfig,
+) -> (CellState<F>, CellDerivedParams<F>, AnnualOutput<F>) {
+    assert!(
+        !weather_by_year.is_empty(),
+        "weather_by_year must not be empty"
+    );
+    let (state, derived) =
+        initialize_cell(biome, cell_input, &weather_by_year[0], schedule, config);
+    run_cell_from_state_compiled(
+        state,
+        derived,
+        biome,
+        weather_by_year,
+        schedule,
+        compiled,
+        co2_by_year,
+        config,
+    )
 }
 
 /// Run a complete multi-year simulation for a single cell with repeating or
@@ -849,18 +962,13 @@ pub fn run_cell_simulation<F: Float>(
     co2_by_year: Option<&[F]>,
     config: &SimConfig,
 ) -> (CellState<F>, CellDerivedParams<F>, AnnualOutput<F>) {
-    assert!(
-        !weather_by_year.is_empty(),
-        "weather_by_year must not be empty"
-    );
-    let (state, derived) =
-        initialize_cell(biome, cell_input, &weather_by_year[0], schedule, config);
-    run_cell_from_state(
-        state,
-        derived,
+    let compiled = CompiledSchedule::build(schedule, biome);
+    run_cell_simulation_compiled(
         biome,
+        cell_input,
         weather_by_year,
         schedule,
+        &compiled,
         co2_by_year,
         config,
     )
@@ -1209,6 +1317,258 @@ mod tests {
             "Poor drainage (anerb < 1) should preserve more SOM: poor={} well={}",
             st_poor.somsc(),
             st_well.somsc()
+        );
+    }
+
+    #[test]
+    fn compiled_schedule_matches_step_month_exactly() {
+        let biome = synthetic_biome_f64();
+        let cell_in = CellSiteInput::from_site(&biome.site_defaults);
+        let weather = [MonthlyWeather {
+            precip_cm: 7.0,
+            tmin_c: 5.0,
+            tmax_c: 19.0,
+        }; 12];
+        let schedule = Schedule {
+            start_year: 1,
+            last_year: 6,
+            initial_system: SystemKind::Savanna,
+            initial_crop: "TMC3".into(),
+            initial_tree: "MTCF".into(),
+            blocks: vec![
+                ScheduleBlock {
+                    block_num: 1,
+                    label: "Block 1".into(),
+                    end_year: 3,
+                    repeat_years: 2,
+                    weather_mode: 'M',
+                    events: vec![
+                        ScheduledEvent {
+                            rel_year: 1,
+                            month: 4,
+                            kind: EventKind::Frst,
+                        },
+                        ScheduledEvent {
+                            rel_year: 1,
+                            month: 4,
+                            kind: EventKind::Tfst,
+                        },
+                        ScheduledEvent {
+                            rel_year: 1,
+                            month: 7,
+                            kind: EventKind::Graz("MOD".into()),
+                        },
+                        ScheduledEvent {
+                            rel_year: 2,
+                            month: 5,
+                            kind: EventKind::Fert("NPK".into()),
+                        },
+                        ScheduledEvent {
+                            rel_year: 2,
+                            month: 10,
+                            kind: EventKind::Senm,
+                        },
+                        ScheduledEvent {
+                            rel_year: 2,
+                            month: 11,
+                            kind: EventKind::Last,
+                        },
+                    ],
+                },
+                ScheduleBlock {
+                    block_num: 2,
+                    label: "Block 2".into(),
+                    end_year: 6,
+                    repeat_years: 1,
+                    weather_mode: 'M',
+                    events: vec![
+                        ScheduledEvent {
+                            rel_year: 1,
+                            month: 5,
+                            kind: EventKind::Frst,
+                        },
+                        ScheduledEvent {
+                            rel_year: 1,
+                            month: 9,
+                            kind: EventKind::Fire("HOT".into()),
+                        },
+                    ],
+                },
+            ],
+            ..Schedule::default()
+        };
+        let cfg = SimConfig {
+            profile: CompatibilityProfile::ScientificClean,
+            elements: ElementMode::FullCnps,
+            start_year: 1,
+            end_year: 6,
+            ..SimConfig::default()
+        };
+
+        // Run via uncompiled per-month API.
+        let (mut st_uncomp, der) = initialize_cell(&biome, &cell_in, &weather, &schedule, &cfg);
+        let mut sel = ActiveSelection::from_schedule(&schedule);
+        let co2 = biome.fix.co2ppm[0];
+        for year in 1..=6 {
+            for m in 0..12 {
+                let _ = step_month(
+                    &mut st_uncomp,
+                    &der,
+                    &biome,
+                    &mut sel,
+                    &schedule,
+                    &weather[m],
+                    year,
+                    (m + 1) as u8,
+                    co2,
+                    &cfg,
+                );
+            }
+        }
+
+        // Run via compiled schedule API.
+        let compiled = CompiledSchedule::build(&schedule, &biome);
+        let (st_comp, _, _) = run_cell_simulation_compiled(
+            &biome,
+            &cell_in,
+            &[weather],
+            &schedule,
+            &compiled,
+            None,
+            &cfg,
+        );
+
+        assert!((st_uncomp.somsc() - st_comp.somsc()).abs() < 1.0e-12);
+        assert!((st_uncomp.aglivc.total() - st_comp.aglivc.total()).abs() < 1.0e-12);
+        assert!((st_uncomp.bglivc.total() - st_comp.bglivc.total()).abs() < 1.0e-12);
+        assert!((st_uncomp.rlwodc.total() - st_comp.rlwodc.total()).abs() < 1.0e-12);
+        assert!((st_uncomp.asmos[0] - st_comp.asmos[0]).abs() < 1.0e-12);
+        assert!((st_uncomp.minerl[0][0] - st_comp.minerl[0][0]).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn snowpack_melts_above_tmelt0_even_below_freezing() {
+        let mut biome = synthetic_biome_f64();
+        biome.fix.tmelt = [-6.0, 2.0];
+        let cell_in = CellSiteInput::from_site(&biome.site_defaults);
+        let cold = [MonthlyWeather {
+            precip_cm: 5.0,
+            tmin_c: -11.0,
+            tmax_c: -3.0, // tmean = -7.0 <= tmelt[0] (-6.0): accumulates snow
+        }; 12];
+        let mild_freeze = MonthlyWeather {
+            precip_cm: 5.0,
+            tmin_c: -6.0,
+            tmax_c: 2.0, // tmean = -2.0 > tmelt[0] (-6.0) but <= 0: melts into soil
+        };
+        let sched = Schedule::default();
+        let cfg = SimConfig::default();
+        let (mut st, der) = initialize_cell(&biome, &cell_in, &cold, &sched, &cfg);
+        let mut sel = ActiveSelection::from_schedule(&sched);
+        let co2 = biome.fix.co2ppm[0];
+
+        // Month 11 at -2 C: all 5 cm should melt into soil (snow == 0, asmos[0] increases).
+        let asmos_before = st.asmos[0];
+        let _ = step_month(
+            &mut st,
+            &der,
+            &biome,
+            &mut sel,
+            &sched,
+            &mild_freeze,
+            1,
+            11,
+            co2,
+            &cfg,
+        );
+        assert_eq!(st.snow, 0.0, "Snow should melt when tmean > tmelt[0]");
+        assert!(
+            st.asmos[0] > asmos_before,
+            "Melted snow must infiltrate into soil"
+        );
+
+        // Month 12 at -7 C: below tmelt[0], snow must accumulate minus sublimation.
+        let _ = step_month(
+            &mut st, &der, &biome, &mut sel, &sched, &cold[11], 1, 12, co2, &cfg,
+        );
+        assert!(
+            st.snow > 3.5 && st.snow < 5.0,
+            "Snow should accumulate below tmelt[0]: snow={}",
+            st.snow
+        );
+    }
+
+    #[test]
+    fn deciduous_mixed_forest_drops_leaves_once_per_autumn() {
+        let mut biome = synthetic_biome_f64();
+        let mut mixed = TreeParams::<f64> {
+            name: "MIXED".into(),
+            decid: 1,
+            leafdr: [0.01; 12],
+            ..TreeParams::default()
+        };
+        mixed.wooddr[0] = 0.50; // 50% deciduous, 50% evergreen
+        biome.trees.insert("MIXED".into(), mixed);
+        biome.site_defaults.rlvcis = [200.0, 0.0];
+        biome.site_defaults.rleave = [5.0, 0.5, 0.5];
+        biome.site_defaults.rlwcis = [5000.0, 0.0];
+        biome.site_defaults.rlwode = [25.0, 2.5, 2.5];
+
+        let cell_in = CellSiteInput::from_site(&biome.site_defaults);
+        let cool_autumn = [MonthlyWeather {
+            precip_cm: 6.0,
+            tmin_c: 0.0,
+            tmax_c: 8.0, // stemp < 8 C across months 10, 11, 12
+        }; 12];
+        let sched = Schedule {
+            initial_system: SystemKind::Forest,
+            initial_tree: "MIXED".into(),
+            blocks: vec![ScheduleBlock {
+                block_num: 1,
+                label: "Autumn".into(),
+                end_year: 2,
+                repeat_years: 1,
+                weather_mode: 'M',
+                events: vec![
+                    ScheduledEvent {
+                        rel_year: 1,
+                        month: 11,
+                        kind: EventKind::Senm,
+                    },
+                    ScheduledEvent {
+                        rel_year: 1,
+                        month: 12,
+                        kind: EventKind::Tlst,
+                    },
+                ],
+            }],
+            ..Schedule::default()
+        };
+        let cfg = SimConfig::default();
+        let (mut st, der) = initialize_cell(&biome, &cell_in, &cool_autumn, &sched, &cfg);
+        st.forgrw = false; // No growth so we isolate leaf drop cleanly.
+        let mut sel = ActiveSelection::from_schedule(&sched);
+        let co2 = biome.fix.co2ppm[0];
+
+        for month in [10u8, 11, 12] {
+            let _ = step_month(
+                &mut st,
+                &der,
+                &biome,
+                &mut sel,
+                &sched,
+                &cool_autumn[(month - 1) as usize],
+                1,
+                month,
+                co2,
+                &cfg,
+            );
+        }
+        // Should retain ~50% * 0.99 * 0.99 ≈ 98 g C (NOT 200 * 0.5^3 = 25 g C!).
+        let rem = st.rleavc.total();
+        assert!(
+            rem > 90.0 && rem < 105.0,
+            "Mixed deciduous/evergreen canopy should drop 50% ONCE per autumn, got rleavc={rem}"
         );
     }
 }

@@ -5,26 +5,31 @@
 
 use crate::config::ElementMode;
 use crate::float::Float;
-use crate::ledger::{FlowLedger, PoolId};
-use crate::params::{CellDerivedParams, FixParams, TreeParams, MAX_ELEM};
-use crate::state::CellState;
-use crate::subsystems::mineralization::{
-    candec_scale, route_decomp_nutrients, surface_microbe_ce_ratio, target_ce_ratio,
+use crate::ledger::{
+    export_c_direct, export_e_direct, transfer_c_direct, transfer_e_direct, FlowLedger,
 };
+use crate::params::{CellDerivedParams, FixParams, TreeParams, MAX_ELEM};
+use crate::state::{CarbonPool, CellState};
+use crate::subsystems::mineralization::{surface_microbe_ce_ratio, target_ce_ratio};
 
 /// Generalized Poisson Density Function (`gpdf`) used for temperature responses.
+///
+/// Reformulated algebraically as $\exp(a \ln f + \frac{a}{b}(1 - \exp(b \ln f)))$
+/// using 1 `ln` + 2 `exp` instead of 2 `powf` + 1 `exp` for higher single-thread throughput.
 #[inline]
 pub fn gpdf<F: Float>(x: F, x_opt: F, x_max: F, a: F, b: F) -> F {
     if x >= x_max {
         return F::ZERO;
     }
     let denom = (x_max - x_opt).max(F::EPS_GUARD);
-    let frac = ((x_max - x) / denom).max(F::ZERO);
+    let frac = (x_max - x) / denom;
     if frac <= F::ZERO {
         return F::ZERO;
     }
-    let exponent = (a / b.max(F::EPS_GUARD)) * (F::ONE - frac.powf(b));
-    (frac.powf(a) * exponent.exp()).clamp_val(F::ZERO, F::ONE)
+    let ln_frac = frac.ln();
+    let frac_b = (b * ln_frac).exp();
+    let log_val = a * ln_frac + (a / b.max(F::EPS_GUARD)) * (F::ONE - frac_b);
+    log_val.exp().clamp_val(F::ZERO, F::ONE)
 }
 
 /// Decomposition temperature modifier (`tcalc`, Parton et al. 1994 arctangent curve).
@@ -95,6 +100,198 @@ pub fn update_abiotic_factors<F: Float>(
     (defac, anerb)
 }
 
+/// Const-specialized `candec_scale` so LLVM unrolls `NELEM == 1` to pure scalar arithmetic.
+#[inline(always)]
+fn candec_scale_const<F: Float, const NELEM: usize>(
+    donor_c: F,
+    donor_e: [F; MAX_ELEM],
+    c_flow: F,
+    c_net: F,
+    target_ce: [F; MAX_ELEM],
+    minerl0: [F; MAX_ELEM],
+) -> F {
+    if donor_c <= F::EPS_GUARD || c_flow <= F::EPS_GUARD {
+        return F::ZERO;
+    }
+    let mut scale = F::ONE;
+    let frac_donor = (c_flow / donor_c).clamp_val(F::ZERO, F::ONE);
+    for e in 0..NELEM {
+        let e_rel = donor_e[e] * frac_donor;
+        let e_req = if target_ce[e] > F::EPS_GUARD {
+            c_net / target_ce[e]
+        } else {
+            F::ZERO
+        };
+        if e_req > e_rel {
+            let immob_needed = e_req - e_rel;
+            let avail = minerl0[e].max(F::ZERO);
+            if immob_needed > avail {
+                let s = (avail / immob_needed).clamp_val(F::ZERO, F::ONE);
+                if s < scale {
+                    scale = s;
+                }
+            }
+        }
+    }
+    scale
+}
+
+/// Direct, audited nutrient mineralization/immobilization helper matching
+/// `mineralization::route_decomp_nutrients` with zero enum-dispatch overhead
+/// and compile-time `NELEM` unrolling.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn route_decomp_nutrients_direct<F: Float, const NELEM: usize>(
+    donor_e_pool: &mut [F; MAX_ELEM],
+    recv_e_pool: &mut [F; MAX_ELEM],
+    minerl0: &mut [F; MAX_ELEM],
+    cum_e_out: &mut [F; MAX_ELEM],
+    month_net_min: &mut [F; MAX_ELEM],
+    month_n_volat: &mut F,
+    vlossg_clamped: F,
+    donor_c: F,
+    donor_e_snap: [F; MAX_ELEM],
+    c_flow: F,
+    c_net: F,
+    target_ce: [F; MAX_ELEM],
+) {
+    if donor_c <= F::EPS_GUARD || c_flow <= F::EPS_GUARD {
+        return;
+    }
+    let frac_donor = (c_flow / donor_c).clamp_val(F::ZERO, F::ONE);
+    for e in 0..NELEM {
+        let e_rel = donor_e_snap[e] * frac_donor;
+        let e_req = if target_ce[e] > F::EPS_GUARD {
+            c_net / target_ce[e]
+        } else {
+            F::ZERO
+        };
+        if e_rel >= e_req {
+            let to_recv = e_req;
+            let net_min = e_rel - e_req;
+            if to_recv > F::ZERO {
+                transfer_e_direct(&mut donor_e_pool[e], &mut recv_e_pool[e], to_recv);
+            }
+            if net_min > F::ZERO {
+                if e == 0 && vlossg_clamped > F::ZERO {
+                    let volat = (e_rel * vlossg_clamped).min(net_min);
+                    let to_min = net_min - volat;
+                    export_e_direct(&mut donor_e_pool[0], &mut cum_e_out[0], volat);
+                    if to_min > F::ZERO {
+                        transfer_e_direct(&mut donor_e_pool[0], &mut minerl0[0], to_min);
+                    }
+                    *month_n_volat += volat;
+                    month_net_min[0] += to_min;
+                } else {
+                    transfer_e_direct(&mut donor_e_pool[e], &mut minerl0[e], net_min);
+                    month_net_min[e] += net_min;
+                }
+            }
+        } else {
+            let immob = (e_req - e_rel).min(minerl0[e].max(F::ZERO));
+            if e_rel > F::ZERO {
+                transfer_e_direct(&mut donor_e_pool[e], &mut recv_e_pool[e], e_rel);
+            }
+            if immob > F::ZERO {
+                transfer_e_direct(&mut minerl0[e], &mut recv_e_pool[e], immob);
+                month_net_min[e] -= immob;
+            }
+        }
+    }
+}
+
+/// Helper to decompose one dead wood pool (`wood1`, `wood2`, or `wood3`) directly.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn decomp_one_wood<F: Float, const NELEM: usize>(
+    wc_pool: &mut CarbonPool<F>,
+    we_pool: &mut [F; MAX_ELEM],
+    som1c_target: &mut CarbonPool<F>,
+    som1e_target: &mut [F; MAX_ELEM],
+    som2c: &mut CarbonPool<F>,
+    som2e: &mut [F; MAX_ELEM],
+    minerl0: &mut [F; MAX_ELEM],
+    cum_c_out: &mut F,
+    cum_e_out: &mut [F; MAX_ELEM],
+    month_resp: &mut F,
+    month_net_min: &mut [F; MAX_ELEM],
+    month_n_volat: &mut F,
+    fix: &FixParams<F>,
+    vlossg_clamped: F,
+    som_lyr: usize,
+    lig: F,
+    lig_exp: F,
+    dec_rate: F,
+    defac_dt: F,
+    an_m: F,
+    r_som1: [F; MAX_ELEM],
+    r_som2: [F; MAX_ELEM],
+) {
+    let f = F::from_f64;
+    let wc = wc_pool.total();
+    if wc <= F::EPS_GUARD {
+        return;
+    }
+    let we = *we_pool;
+    let raw_c = (wc * dec_rate * defac_dt * lig_exp * an_m).min(wc * f(0.95));
+    let c_lig = raw_c * lig;
+    let c_nonlig = raw_c - c_lig;
+
+    if c_lig > F::EPS_GUARD {
+        let c_net = c_lig * (F::ONE - fix.rsplig);
+        let scale = candec_scale_const::<F, NELEM>(wc, we, c_lig, c_net, r_som2, *minerl0);
+        let cf = c_lig * scale;
+        if cf > F::EPS_GUARD {
+            let resp = cf * fix.rsplig;
+            let net = cf - resp;
+            export_c_direct(wc_pool, cum_c_out, resp);
+            transfer_c_direct(wc_pool, som2c, net);
+            *month_resp += resp;
+            route_decomp_nutrients_direct::<F, NELEM>(
+                we_pool,
+                som2e,
+                minerl0,
+                cum_e_out,
+                month_net_min,
+                month_n_volat,
+                vlossg_clamped,
+                wc,
+                we,
+                cf,
+                net,
+                r_som2,
+            );
+        }
+    }
+    if c_nonlig > F::EPS_GUARD {
+        let resp_f = fix.ps1co2[som_lyr];
+        let c_net = c_nonlig * (F::ONE - resp_f);
+        let scale = candec_scale_const::<F, NELEM>(wc, we, c_nonlig, c_net, r_som1, *minerl0);
+        let cf = c_nonlig * scale;
+        if cf > F::EPS_GUARD {
+            let resp = cf * resp_f;
+            let net = cf - resp;
+            export_c_direct(wc_pool, cum_c_out, resp);
+            transfer_c_direct(wc_pool, som1c_target, net);
+            *month_resp += resp;
+            route_decomp_nutrients_direct::<F, NELEM>(
+                we_pool,
+                som1e_target,
+                minerl0,
+                cum_e_out,
+                month_net_min,
+                month_n_volat,
+                vlossg_clamped,
+                wc,
+                we,
+                cf,
+                net,
+                r_som1,
+            );
+        }
+    }
+}
+
 /// Execute full monthly decomposition (litter, dead wood, surface microbes,
 /// active SOM, slow SOM, passive SOM) using `fix.ntspm` sub-steps (default 4).
 #[allow(clippy::too_many_arguments)]
@@ -105,44 +302,122 @@ pub fn step_decomposition<F: Float>(
     tree: Option<&TreeParams<F>>,
     leach_flux: F,
     elements: ElementMode,
-    ledger: &mut FlowLedger<F>,
+    _ledger: &mut FlowLedger<F>,
+) {
+    match elements {
+        ElementMode::CarbonNitrogen => {
+            step_decomposition_impl::<F, 1>(state, derived, fix, tree, leach_flux);
+        }
+        ElementMode::CarbonNitrogenPhosphorus => {
+            step_decomposition_impl::<F, 2>(state, derived, fix, tree, leach_flux);
+        }
+        ElementMode::FullCnps => {
+            step_decomposition_impl::<F, 3>(state, derived, fix, tree, leach_flux);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn step_decomposition_impl<F: Float, const NELEM: usize>(
+    state: &mut CellState<F>,
+    derived: &CellDerivedParams<F>,
+    fix: &FixParams<F>,
+    tree: Option<&TreeParams<F>>,
+    leach_flux: F,
 ) {
     let f = F::from_f64;
     let nsub = fix.ntspm.clamp(1, 12) as usize;
     let dt = F::ONE / f((12 * nsub) as f64);
 
     let defac = state.defac;
+    let defac_dt = defac * dt;
     let anerb = state.anerb;
     let clt = state.clteff;
+    let vlossg_clamped = fix.vlossg.clamp_val(F::ZERO, f(0.5));
     let decw = tree.map(|t| t.decw).unwrap_or([f(1.5), f(0.5), f(0.6)]);
 
-    // Precompute lignin inhibition exponentials once per month (strlig and wdlig are
-    // invariant across the `ntspm` decomposition sub-steps).
+    // Guard lignin inhibition exponentials so zero pools skip transcendental work.
     let str_lig = [
         state.strlig[0].clamp_val(F::ZERO, F::ONE),
         state.strlig[1].clamp_val(F::ZERO, F::ONE),
     ];
+    let has_struc0 = state.strucc[0].total() > F::EPS_GUARD;
+    let has_struc1 = state.strucc[1].total() > F::EPS_GUARD;
     let str_lig_exp = [
-        (-fix.pligst[0] * str_lig[0]).exp(),
-        (-fix.pligst[1] * str_lig[1]).exp(),
+        if has_struc0 {
+            (-fix.pligst[0] * str_lig[0]).exp()
+        } else {
+            F::ONE
+        },
+        if has_struc1 {
+            (-fix.pligst[1] * str_lig[1]).exp()
+        } else {
+            F::ONE
+        },
     ];
+
+    let has_wood0 = state.wood1c.total() > F::EPS_GUARD;
+    let has_wood1 = state.wood2c.total() > F::EPS_GUARD;
+    let has_wood2 = state.wood3c.total() > F::EPS_GUARD;
+    let has_any_wood = has_wood0 || has_wood1 || has_wood2;
     let wd_lig = [
         state.wdlig[0].clamp_val(F::ZERO, F::ONE),
         state.wdlig[1].clamp_val(F::ZERO, F::ONE),
         state.wdlig[2].clamp_val(F::ZERO, F::ONE),
     ];
-    let wd_lig_exp = [
-        (-fix.pligst[0] * wd_lig[0]).exp(),
-        (-fix.pligst[0] * wd_lig[1]).exp(),
-        (-fix.pligst[1] * wd_lig[2]).exp(),
-    ];
+    let wd_lig_exp = if has_any_wood {
+        [
+            if has_wood0 {
+                (-fix.pligst[0] * wd_lig[0]).exp()
+            } else {
+                F::ONE
+            },
+            if has_wood1 {
+                (-fix.pligst[0] * wd_lig[1]).exp()
+            } else {
+                F::ONE
+            },
+            if has_wood2 {
+                (-fix.pligst[1] * wd_lig[2]).exp()
+            } else {
+                F::ONE
+            },
+        ]
+    } else {
+        [F::ONE; 3]
+    };
+
+    // Precompute organic leaching fraction once per month (invariant across sub-steps).
+    let resp_f_s11 = derived.p1co2_soil;
+    let om_leach_f = if leach_flux > F::ZERO {
+        ((leach_flux / fix.omlech[2].max(f(0.1))).clamp_val(F::ZERO, F::ONE) * derived.omlech_frac)
+            .min(F::ONE - resp_f_s11)
+    } else {
+        F::ZERO
+    };
+    let to_s3_f_s11 = derived
+        .fps1s3
+        .min((F::ONE - resp_f_s11 - om_leach_f).max(F::ZERO));
+    let to_s2_f_s11 = (F::ONE - resp_f_s11 - om_leach_f - to_s3_f_s11).max(F::ZERO);
+    let s11_non_resp_denom = (F::ONE - resp_f_s11 - om_leach_f).max(F::EPS_GUARD);
+    let s11_s3_cflow_mult = to_s3_f_s11 / s11_non_resp_denom * (F::ONE - om_leach_f);
+    let s11_s2_cflow_mult = to_s2_f_s11 / s11_non_resp_denom * (F::ONE - om_leach_f);
+
+    let resp_f_s2 = fix.p2co2;
+    let to_s3_f_s2 = derived.fps2s3.min((F::ONE - resp_f_s2).max(F::ZERO));
+    let to_s1_f_s2 = (F::ONE - resp_f_s2 - to_s3_f_s2).max(F::ZERO);
+    let s2_share_denom = (to_s1_f_s2 + to_s3_f_s2).max(F::EPS_GUARD);
+    let s2_s3_share = to_s3_f_s2 / s2_share_denom;
+    let s2_s1_share = to_s1_f_s2 / s2_share_denom;
+
+    let resp_f_s10 = fix.p1co2a[0].clamp_val(f(0.05), f(0.95));
 
     for _ in 0..nsub {
         // Compute target C:E ratios for SOM1, SOM2, SOM3 from current top-layer mineral pools.
         let mut r_som1 = [F::ONE; MAX_ELEM];
         let mut r_som2 = [F::ONE; MAX_ELEM];
         let mut r_som3 = [F::ONE; MAX_ELEM];
-        for e in 0..elements.nelem() {
+        for e in 0..NELEM {
             let m0 = state.minerl[0][e];
             r_som1[e] = target_ce_ratio(fix.varat1[e], m0);
             r_som2[e] = target_ce_ratio(fix.varat2[e], m0);
@@ -153,12 +428,13 @@ pub fn step_decomposition<F: Float>(
         for layer in 0..2 {
             let sc = state.strucc[layer].total();
             if sc > F::EPS_GUARD {
+                let se = state.struce[layer];
                 let eff_c = sc.min(fix.strmax[layer]);
                 let an_mult = if layer == 1 { anerb } else { F::ONE };
                 let clt_mult = if layer == 1 { clt[3] } else { F::ONE };
-                // Manual A2-32: clteff[3] is soil structural decomposition multiplier.
-                let k = fix.dec1[layer] * defac * str_lig_exp[layer] * an_mult * clt_mult;
-                let raw_c = (eff_c * k * dt).min(sc * f(0.95));
+                let raw_c =
+                    (eff_c * fix.dec1[layer] * defac_dt * str_lig_exp[layer] * an_mult * clt_mult)
+                        .min(sc * f(0.95));
 
                 let lig = str_lig[layer];
                 let c_lig = raw_c * lig;
@@ -167,511 +443,405 @@ pub fn step_decomposition<F: Float>(
                 // Lignin -> SOM2 (respired fraction rsplig).
                 if c_lig > F::EPS_GUARD {
                     let c_net = c_lig * (F::ONE - fix.rsplig);
-                    let scale = candec_scale(
+                    let scale = candec_scale_const::<F, NELEM>(
                         sc,
-                        state.struce[layer],
+                        se,
                         c_lig,
                         c_net,
                         r_som2,
                         state.minerl[0],
-                        elements,
                     );
                     let cf = c_lig * scale;
                     if cf > F::EPS_GUARD {
                         let resp = cf * fix.rsplig;
                         let net = cf - resp;
-                        ledger.schedule(PoolId::StrucC(layer), PoolId::AtmosphereC, resp);
-                        ledger.schedule(PoolId::StrucC(layer), PoolId::Som2C, net);
+                        export_c_direct(&mut state.strucc[layer], &mut state.cum_c_out, resp);
+                        transfer_c_direct(&mut state.strucc[layer], &mut state.som2c, net);
                         state.month_resp += resp;
-                        route_decomp_nutrients(
-                            state,
-                            fix,
+                        route_decomp_nutrients_direct::<F, NELEM>(
+                            &mut state.struce[layer],
+                            &mut state.som2e,
+                            &mut state.minerl[0],
+                            &mut state.cum_e_out,
+                            &mut state.month_net_min,
+                            &mut state.month_n_volat,
+                            vlossg_clamped,
                             sc,
-                            state.struce[layer],
-                            [
-                                PoolId::StrucE(layer, 0),
-                                PoolId::StrucE(layer, 1),
-                                PoolId::StrucE(layer, 2),
-                            ],
-                            [PoolId::Som2E(0), PoolId::Som2E(1), PoolId::Som2E(2)],
+                            se,
                             cf,
                             net,
                             r_som2,
-                            elements,
-                            ledger,
                         );
                     }
                 }
 
                 // Non-lignin -> SOM1[layer] (respired fraction ps1co2[layer]).
-                // Surface layer (0) uses `pcemic` based on donor E:C; soil layer (1) uses `varat1`.
                 if c_nonlig > F::EPS_GUARD {
                     let resp_f = fix.ps1co2[layer];
                     let c_net = c_nonlig * (F::ONE - resp_f);
                     let r_recv = if layer == 0 {
                         let mut r_surf = [F::ONE; MAX_ELEM];
-                        for e in 0..elements.nelem() {
-                            r_surf[e] =
-                                surface_microbe_ce_ratio(fix.pcemic[e], state.struce[0][e] / sc);
+                        for e in 0..NELEM {
+                            r_surf[e] = surface_microbe_ce_ratio(fix.pcemic[e], se[e] / sc);
                         }
                         r_surf
                     } else {
                         r_som1
                     };
-                    let scale = candec_scale(
+                    let scale = candec_scale_const::<F, NELEM>(
                         sc,
-                        state.struce[layer],
+                        se,
                         c_nonlig,
                         c_net,
                         r_recv,
                         state.minerl[0],
-                        elements,
                     );
                     let cf = c_nonlig * scale;
                     if cf > F::EPS_GUARD {
                         let resp = cf * resp_f;
                         let net = cf - resp;
-                        ledger.schedule(PoolId::StrucC(layer), PoolId::AtmosphereC, resp);
-                        ledger.schedule(PoolId::StrucC(layer), PoolId::Som1C(layer), net);
+                        export_c_direct(&mut state.strucc[layer], &mut state.cum_c_out, resp);
+                        transfer_c_direct(&mut state.strucc[layer], &mut state.som1c[layer], net);
                         state.month_resp += resp;
-                        route_decomp_nutrients(
-                            state,
-                            fix,
+                        route_decomp_nutrients_direct::<F, NELEM>(
+                            &mut state.struce[layer],
+                            &mut state.som1e[layer],
+                            &mut state.minerl[0],
+                            &mut state.cum_e_out,
+                            &mut state.month_net_min,
+                            &mut state.month_n_volat,
+                            vlossg_clamped,
                             sc,
-                            state.struce[layer],
-                            [
-                                PoolId::StrucE(layer, 0),
-                                PoolId::StrucE(layer, 1),
-                                PoolId::StrucE(layer, 2),
-                            ],
-                            [
-                                PoolId::Som1E(layer, 0),
-                                PoolId::Som1E(layer, 1),
-                                PoolId::Som1E(layer, 2),
-                            ],
+                            se,
                             cf,
                             net,
                             r_recv,
-                            elements,
-                            ledger,
                         );
                     }
                 }
             }
         }
-        ledger.commit(state);
 
         // --- 2. Metabolic Litter Decomposition (surface=0, soil=1) ---
         for layer in 0..2 {
             let mc = state.metabc[layer].total();
             if mc > F::EPS_GUARD {
+                let me = state.metabe[layer];
                 let an_mult = if layer == 1 { anerb } else { F::ONE };
-                let k = fix.dec2[layer] * defac * an_mult;
-                let raw_c = (mc * k * dt).min(mc * f(0.95));
+                let raw_c = (mc * fix.dec2[layer] * defac_dt * an_mult).min(mc * f(0.95));
                 let resp_f = fix.pmco2[layer];
                 let c_net = raw_c * (F::ONE - resp_f);
                 let r_recv = if layer == 0 {
                     let mut r_surf = [F::ONE; MAX_ELEM];
-                    for e in 0..elements.nelem() {
-                        r_surf[e] =
-                            surface_microbe_ce_ratio(fix.pcemic[e], state.metabe[0][e] / mc);
+                    for e in 0..NELEM {
+                        r_surf[e] = surface_microbe_ce_ratio(fix.pcemic[e], me[e] / mc);
                     }
                     r_surf
                 } else {
                     r_som1
                 };
-                let scale = candec_scale(
-                    mc,
-                    state.metabe[layer],
-                    raw_c,
-                    c_net,
-                    r_recv,
-                    state.minerl[0],
-                    elements,
-                );
+                let scale =
+                    candec_scale_const::<F, NELEM>(mc, me, raw_c, c_net, r_recv, state.minerl[0]);
                 let cf = raw_c * scale;
                 if cf > F::EPS_GUARD {
                     let resp = cf * resp_f;
                     let net = cf - resp;
-                    ledger.schedule(PoolId::MetabC(layer), PoolId::AtmosphereC, resp);
-                    ledger.schedule(PoolId::MetabC(layer), PoolId::Som1C(layer), net);
+                    export_c_direct(&mut state.metabc[layer], &mut state.cum_c_out, resp);
+                    transfer_c_direct(&mut state.metabc[layer], &mut state.som1c[layer], net);
                     state.month_resp += resp;
-                    route_decomp_nutrients(
-                        state,
-                        fix,
+                    route_decomp_nutrients_direct::<F, NELEM>(
+                        &mut state.metabe[layer],
+                        &mut state.som1e[layer],
+                        &mut state.minerl[0],
+                        &mut state.cum_e_out,
+                        &mut state.month_net_min,
+                        &mut state.month_n_volat,
+                        vlossg_clamped,
                         mc,
-                        state.metabe[layer],
-                        [
-                            PoolId::MetabE(layer, 0),
-                            PoolId::MetabE(layer, 1),
-                            PoolId::MetabE(layer, 2),
-                        ],
-                        [
-                            PoolId::Som1E(layer, 0),
-                            PoolId::Som1E(layer, 1),
-                            PoolId::Som1E(layer, 2),
-                        ],
+                        me,
                         cf,
                         net,
                         r_recv,
-                        elements,
-                        ledger,
                     );
                 }
             }
         }
-        ledger.commit(state);
 
         // --- 3. Dead Wood Decomposition (wood1, wood2, wood3) ---
-        let wood_specs: [(PoolId, [PoolId; 3], usize, F, F); 3] = [
-            (
-                PoolId::Wood1C,
-                [PoolId::Wood1E(0), PoolId::Wood1E(1), PoolId::Wood1E(2)],
-                0,
-                decw[0],
-                F::ONE,
-            ),
-            (
-                PoolId::Wood2C,
-                [PoolId::Wood2E(0), PoolId::Wood2E(1), PoolId::Wood2E(2)],
-                0,
-                decw[1],
-                F::ONE,
-            ),
-            (
-                PoolId::Wood3C,
-                [PoolId::Wood3E(0), PoolId::Wood3E(1), PoolId::Wood3E(2)],
-                1,
-                decw[2],
-                anerb,
-            ),
-        ];
-        for (idx, (w_c_id, w_e_ids, som_lyr, dec_rate, an_m)) in wood_specs.into_iter().enumerate()
-        {
-            let (wc, we) = match idx {
-                0 => (state.wood1c.total(), state.wood1e),
-                1 => (state.wood2c.total(), state.wood2e),
-                _ => (state.wood3c.total(), state.wood3e),
-            };
-            if wc > F::EPS_GUARD {
-                let lig = wd_lig[idx];
-                let k = dec_rate * defac * wd_lig_exp[idx] * an_m;
-                let raw_c = (wc * k * dt).min(wc * f(0.95));
-                let c_lig = raw_c * lig;
-                let c_nonlig = raw_c - c_lig;
-
-                if c_lig > F::EPS_GUARD {
-                    let c_net = c_lig * (F::ONE - fix.rsplig);
-                    let scale =
-                        candec_scale(wc, we, c_lig, c_net, r_som2, state.minerl[0], elements);
-                    let cf = c_lig * scale;
-                    if cf > F::EPS_GUARD {
-                        let resp = cf * fix.rsplig;
-                        let net = cf - resp;
-                        ledger.schedule(w_c_id, PoolId::AtmosphereC, resp);
-                        ledger.schedule(w_c_id, PoolId::Som2C, net);
-                        state.month_resp += resp;
-                        route_decomp_nutrients(
-                            state,
-                            fix,
-                            wc,
-                            we,
-                            w_e_ids,
-                            [PoolId::Som2E(0), PoolId::Som2E(1), PoolId::Som2E(2)],
-                            cf,
-                            net,
-                            r_som2,
-                            elements,
-                            ledger,
-                        );
-                    }
-                }
-                if c_nonlig > F::EPS_GUARD {
-                    let resp_f = fix.ps1co2[som_lyr];
-                    let c_net = c_nonlig * (F::ONE - resp_f);
-                    let scale =
-                        candec_scale(wc, we, c_nonlig, c_net, r_som1, state.minerl[0], elements);
-                    let cf = c_nonlig * scale;
-                    if cf > F::EPS_GUARD {
-                        let resp = cf * resp_f;
-                        let net = cf - resp;
-                        ledger.schedule(w_c_id, PoolId::AtmosphereC, resp);
-                        ledger.schedule(w_c_id, PoolId::Som1C(som_lyr), net);
-                        state.month_resp += resp;
-                        route_decomp_nutrients(
-                            state,
-                            fix,
-                            wc,
-                            we,
-                            w_e_ids,
-                            [
-                                PoolId::Som1E(som_lyr, 0),
-                                PoolId::Som1E(som_lyr, 1),
-                                PoolId::Som1E(som_lyr, 2),
-                            ],
-                            cf,
-                            net,
-                            r_som1,
-                            elements,
-                            ledger,
-                        );
-                    }
-                }
+        if has_any_wood {
+            if has_wood0 {
+                decomp_one_wood::<F, NELEM>(
+                    &mut state.wood1c,
+                    &mut state.wood1e,
+                    &mut state.som1c[0],
+                    &mut state.som1e[0],
+                    &mut state.som2c,
+                    &mut state.som2e,
+                    &mut state.minerl[0],
+                    &mut state.cum_c_out,
+                    &mut state.cum_e_out,
+                    &mut state.month_resp,
+                    &mut state.month_net_min,
+                    &mut state.month_n_volat,
+                    fix,
+                    vlossg_clamped,
+                    0,
+                    wd_lig[0],
+                    wd_lig_exp[0],
+                    decw[0],
+                    defac_dt,
+                    F::ONE,
+                    r_som1,
+                    r_som2,
+                );
+            }
+            if has_wood1 {
+                decomp_one_wood::<F, NELEM>(
+                    &mut state.wood2c,
+                    &mut state.wood2e,
+                    &mut state.som1c[0],
+                    &mut state.som1e[0],
+                    &mut state.som2c,
+                    &mut state.som2e,
+                    &mut state.minerl[0],
+                    &mut state.cum_c_out,
+                    &mut state.cum_e_out,
+                    &mut state.month_resp,
+                    &mut state.month_net_min,
+                    &mut state.month_n_volat,
+                    fix,
+                    vlossg_clamped,
+                    0,
+                    wd_lig[1],
+                    wd_lig_exp[1],
+                    decw[1],
+                    defac_dt,
+                    F::ONE,
+                    r_som1,
+                    r_som2,
+                );
+            }
+            if has_wood2 {
+                decomp_one_wood::<F, NELEM>(
+                    &mut state.wood3c,
+                    &mut state.wood3e,
+                    &mut state.som1c[1],
+                    &mut state.som1e[1],
+                    &mut state.som2c,
+                    &mut state.som2e,
+                    &mut state.minerl[0],
+                    &mut state.cum_c_out,
+                    &mut state.cum_e_out,
+                    &mut state.month_resp,
+                    &mut state.month_net_min,
+                    &mut state.month_n_volat,
+                    fix,
+                    vlossg_clamped,
+                    1,
+                    wd_lig[2],
+                    wd_lig_exp[2],
+                    decw[2],
+                    defac_dt,
+                    anerb,
+                    r_som1,
+                    r_som2,
+                );
             }
         }
-        ledger.commit(state);
 
         // --- 4. Surface Active Microbes (som1c[0]) -> SOM2 ---
         let s10 = state.som1c[0].total();
         if s10 > F::EPS_GUARD {
-            let k = fix.dec3[0] * defac;
-            let raw_c = (s10 * k * dt).min(s10 * f(0.95));
-            let resp_f = fix.p1co2a[0].clamp_val(f(0.05), f(0.95));
-            let c_net = raw_c * (F::ONE - resp_f);
-            let scale = candec_scale(
-                s10,
-                state.som1e[0],
-                raw_c,
-                c_net,
-                r_som2,
-                state.minerl[0],
-                elements,
-            );
+            let s10e = state.som1e[0];
+            let raw_c = (s10 * fix.dec3[0] * defac_dt).min(s10 * f(0.95));
+            let c_net = raw_c * (F::ONE - resp_f_s10);
+            let scale =
+                candec_scale_const::<F, NELEM>(s10, s10e, raw_c, c_net, r_som2, state.minerl[0]);
             let cf = raw_c * scale;
             if cf > F::EPS_GUARD {
-                let resp = cf * resp_f;
+                let resp = cf * resp_f_s10;
                 let net = cf - resp;
-                ledger.schedule(PoolId::Som1C(0), PoolId::AtmosphereC, resp);
-                ledger.schedule(PoolId::Som1C(0), PoolId::Som2C, net);
+                export_c_direct(&mut state.som1c[0], &mut state.cum_c_out, resp);
+                transfer_c_direct(&mut state.som1c[0], &mut state.som2c, net);
                 state.month_resp += resp;
-                route_decomp_nutrients(
-                    state,
-                    fix,
+                route_decomp_nutrients_direct::<F, NELEM>(
+                    &mut state.som1e[0],
+                    &mut state.som2e,
+                    &mut state.minerl[0],
+                    &mut state.cum_e_out,
+                    &mut state.month_net_min,
+                    &mut state.month_n_volat,
+                    vlossg_clamped,
                     s10,
-                    state.som1e[0],
-                    [
-                        PoolId::Som1E(0, 0),
-                        PoolId::Som1E(0, 1),
-                        PoolId::Som1E(0, 2),
-                    ],
-                    [PoolId::Som2E(0), PoolId::Som2E(1), PoolId::Som2E(2)],
+                    s10e,
                     cf,
                     net,
                     r_som2,
-                    elements,
-                    ledger,
                 );
             }
         }
-        ledger.commit(state);
 
         // --- 5. Soil Active SOM (som1c[1]) -> Resp + Organic Leach + SOM3 + SOM2 ---
         let s11 = state.som1c[1].total();
         if s11 > F::EPS_GUARD {
-            let k = fix.dec3[1] * defac * derived.eftext * anerb * clt[0];
-            let raw_c = (s11 * k * dt).min(s11 * f(0.95));
-            let resp_f = derived.p1co2_soil;
-            // Organic matter leaching scales linearly with 30 cm water flux up to omlech[2] (60 cm).
-            let om_leach_f = if leach_flux > F::ZERO {
-                ((leach_flux / fix.omlech[2].max(f(0.1))).clamp_val(F::ZERO, F::ONE)
-                    * derived.omlech_frac)
-                    .min(F::ONE - resp_f)
-            } else {
-                F::ZERO
-            };
-            let to_s3_f = derived
-                .fps1s3
-                .min((F::ONE - resp_f - om_leach_f).max(F::ZERO));
-            let to_s2_f = (F::ONE - resp_f - om_leach_f - to_s3_f).max(F::ZERO);
-
-            // Check combined immobilization demand into SOM2/SOM3.
-            let c_to_s2 = raw_c * to_s2_f;
-            let c_to_s3 = raw_c * to_s3_f;
-            let scale = candec_scale(
+            let s11e = state.som1e[1];
+            let raw_c =
+                (s11 * fix.dec3[1] * defac_dt * derived.eftext * anerb * clt[0]).min(s11 * f(0.95));
+            let scale = candec_scale_const::<F, NELEM>(
                 s11,
-                state.som1e[1],
+                s11e,
                 raw_c,
-                c_to_s2 + c_to_s3,
+                raw_c * (to_s2_f_s11 + to_s3_f_s11),
                 r_som2,
                 state.minerl[0],
-                elements,
             );
             let cf = raw_c * scale;
             if cf > F::EPS_GUARD {
-                let resp = cf * resp_f;
+                let resp = cf * resp_f_s11;
                 let leach_c = cf * om_leach_f;
-                let net_s3 = cf * to_s3_f;
+                let net_s3 = cf * to_s3_f_s11;
                 let net_s2 = cf - resp - leach_c - net_s3;
 
-                ledger.schedule(PoolId::Som1C(1), PoolId::AtmosphereC, resp);
+                export_c_direct(&mut state.som1c[1], &mut state.cum_c_out, resp);
                 if leach_c > F::ZERO {
-                    ledger.schedule(PoolId::Som1C(1), PoolId::LeachingC, leach_c);
+                    export_c_direct(&mut state.som1c[1], &mut state.cum_c_out, leach_c);
                     state.month_leach_c += leach_c;
-                    // Export organic nutrients proportional to leached C.
                     let frac_l = leach_c / s11;
-                    for e in 0..elements.nelem() {
-                        let le = state.som1e[1][e] * frac_l;
+                    for e in 0..NELEM {
+                        let le = s11e[e] * frac_l;
                         if le > F::ZERO {
-                            ledger.schedule(PoolId::Som1E(1, e), PoolId::LeachingE(e), le);
+                            export_e_direct(&mut state.som1e[1][e], &mut state.cum_e_out[e], le);
                             state.month_leach_e[e] += le;
                         }
                     }
                 }
                 if net_s3 > F::ZERO {
-                    ledger.schedule(PoolId::Som1C(1), PoolId::Som3C, net_s3);
-                    route_decomp_nutrients(
-                        state,
-                        fix,
+                    transfer_c_direct(&mut state.som1c[1], &mut state.som3c, net_s3);
+                    route_decomp_nutrients_direct::<F, NELEM>(
+                        &mut state.som1e[1],
+                        &mut state.som3e,
+                        &mut state.minerl[0],
+                        &mut state.cum_e_out,
+                        &mut state.month_net_min,
+                        &mut state.month_n_volat,
+                        vlossg_clamped,
                         s11,
-                        state.som1e[1],
-                        [
-                            PoolId::Som1E(1, 0),
-                            PoolId::Som1E(1, 1),
-                            PoolId::Som1E(1, 2),
-                        ],
-                        [PoolId::Som3E(0), PoolId::Som3E(1), PoolId::Som3E(2)],
-                        cf * to_s3_f / (F::ONE - resp_f - om_leach_f).max(F::EPS_GUARD)
-                            * (F::ONE - om_leach_f),
+                        s11e,
+                        cf * s11_s3_cflow_mult,
                         net_s3,
                         r_som3,
-                        elements,
-                        ledger,
                     );
                 }
                 if net_s2 > F::ZERO {
-                    ledger.schedule(PoolId::Som1C(1), PoolId::Som2C, net_s2);
-                    route_decomp_nutrients(
-                        state,
-                        fix,
+                    transfer_c_direct(&mut state.som1c[1], &mut state.som2c, net_s2);
+                    route_decomp_nutrients_direct::<F, NELEM>(
+                        &mut state.som1e[1],
+                        &mut state.som2e,
+                        &mut state.minerl[0],
+                        &mut state.cum_e_out,
+                        &mut state.month_net_min,
+                        &mut state.month_n_volat,
+                        vlossg_clamped,
                         s11,
-                        state.som1e[1],
-                        [
-                            PoolId::Som1E(1, 0),
-                            PoolId::Som1E(1, 1),
-                            PoolId::Som1E(1, 2),
-                        ],
-                        [PoolId::Som2E(0), PoolId::Som2E(1), PoolId::Som2E(2)],
-                        cf * to_s2_f / (F::ONE - resp_f - om_leach_f).max(F::EPS_GUARD)
-                            * (F::ONE - om_leach_f),
+                        s11e,
+                        cf * s11_s2_cflow_mult,
                         net_s2,
                         r_som2,
-                        elements,
-                        ledger,
                     );
                 }
                 state.month_resp += resp;
             }
         }
-        ledger.commit(state);
 
         // --- 6. Slow SOM (som2c) -> Resp + SOM3 + SOM1[1] ---
         let s2 = state.som2c.total();
         if s2 > F::EPS_GUARD {
-            let k = fix.dec5 * defac * anerb * clt[1];
-            let raw_c = (s2 * k * dt).min(s2 * f(0.95));
-            let resp_f = fix.p2co2;
-            let to_s3_f = derived.fps2s3.min((F::ONE - resp_f).max(F::ZERO));
-            let to_s1_f = (F::ONE - resp_f - to_s3_f).max(F::ZERO);
-            let scale = candec_scale(
+            let s2e = state.som2e;
+            let raw_c = (s2 * fix.dec5 * defac_dt * anerb * clt[1]).min(s2 * f(0.95));
+            let scale = candec_scale_const::<F, NELEM>(
                 s2,
-                state.som2e,
+                s2e,
                 raw_c,
-                raw_c * (to_s1_f + to_s3_f),
+                raw_c * (to_s1_f_s2 + to_s3_f_s2),
                 r_som1,
                 state.minerl[0],
-                elements,
             );
             let cf = raw_c * scale;
             if cf > F::EPS_GUARD {
-                let resp = cf * resp_f;
-                let net_s3 = cf * to_s3_f;
+                let resp = cf * resp_f_s2;
+                let net_s3 = cf * to_s3_f_s2;
                 let net_s1 = cf - resp - net_s3;
-                ledger.schedule(PoolId::Som2C, PoolId::AtmosphereC, resp);
+                export_c_direct(&mut state.som2c, &mut state.cum_c_out, resp);
                 state.month_resp += resp;
 
-                let share_denom = (to_s1_f + to_s3_f).max(F::EPS_GUARD);
                 if net_s3 > F::ZERO {
-                    ledger.schedule(PoolId::Som2C, PoolId::Som3C, net_s3);
-                    route_decomp_nutrients(
-                        state,
-                        fix,
+                    transfer_c_direct(&mut state.som2c, &mut state.som3c, net_s3);
+                    route_decomp_nutrients_direct::<F, NELEM>(
+                        &mut state.som2e,
+                        &mut state.som3e,
+                        &mut state.minerl[0],
+                        &mut state.cum_e_out,
+                        &mut state.month_net_min,
+                        &mut state.month_n_volat,
+                        vlossg_clamped,
                         s2,
-                        state.som2e,
-                        [PoolId::Som2E(0), PoolId::Som2E(1), PoolId::Som2E(2)],
-                        [PoolId::Som3E(0), PoolId::Som3E(1), PoolId::Som3E(2)],
-                        cf * (to_s3_f / share_denom),
+                        s2e,
+                        cf * s2_s3_share,
                         net_s3,
                         r_som3,
-                        elements,
-                        ledger,
                     );
                 }
                 if net_s1 > F::ZERO {
-                    ledger.schedule(PoolId::Som2C, PoolId::Som1C(1), net_s1);
-                    route_decomp_nutrients(
-                        state,
-                        fix,
+                    transfer_c_direct(&mut state.som2c, &mut state.som1c[1], net_s1);
+                    route_decomp_nutrients_direct::<F, NELEM>(
+                        &mut state.som2e,
+                        &mut state.som1e[1],
+                        &mut state.minerl[0],
+                        &mut state.cum_e_out,
+                        &mut state.month_net_min,
+                        &mut state.month_n_volat,
+                        vlossg_clamped,
                         s2,
-                        state.som2e,
-                        [PoolId::Som2E(0), PoolId::Som2E(1), PoolId::Som2E(2)],
-                        [
-                            PoolId::Som1E(1, 0),
-                            PoolId::Som1E(1, 1),
-                            PoolId::Som1E(1, 2),
-                        ],
-                        cf * (to_s1_f / share_denom),
+                        s2e,
+                        cf * s2_s1_share,
                         net_s1,
                         r_som1,
-                        elements,
-                        ledger,
                     );
                 }
             }
         }
-        ledger.commit(state);
 
         // --- 7. Passive SOM (som3c) -> Resp + SOM1[1] ---
         let s3 = state.som3c.total();
         if s3 > F::EPS_GUARD {
-            let k = fix.dec4 * defac * anerb * clt[2];
-            let raw_c = (s3 * k * dt).min(s3 * f(0.95));
+            let s3e = state.som3e;
+            let raw_c = (s3 * fix.dec4 * defac_dt * anerb * clt[2]).min(s3 * f(0.95));
             let resp_f = fix.p3co2;
             let c_net = raw_c * (F::ONE - resp_f);
-            let scale = candec_scale(
-                s3,
-                state.som3e,
-                raw_c,
-                c_net,
-                r_som1,
-                state.minerl[0],
-                elements,
-            );
+            let scale =
+                candec_scale_const::<F, NELEM>(s3, s3e, raw_c, c_net, r_som1, state.minerl[0]);
             let cf = raw_c * scale;
             if cf > F::EPS_GUARD {
                 let resp = cf * resp_f;
                 let net = cf - resp;
-                ledger.schedule(PoolId::Som3C, PoolId::AtmosphereC, resp);
-                ledger.schedule(PoolId::Som3C, PoolId::Som1C(1), net);
+                export_c_direct(&mut state.som3c, &mut state.cum_c_out, resp);
+                transfer_c_direct(&mut state.som3c, &mut state.som1c[1], net);
                 state.month_resp += resp;
-                route_decomp_nutrients(
-                    state,
-                    fix,
+                route_decomp_nutrients_direct::<F, NELEM>(
+                    &mut state.som3e,
+                    &mut state.som1e[1],
+                    &mut state.minerl[0],
+                    &mut state.cum_e_out,
+                    &mut state.month_net_min,
+                    &mut state.month_n_volat,
+                    vlossg_clamped,
                     s3,
-                    state.som3e,
-                    [PoolId::Som3E(0), PoolId::Som3E(1), PoolId::Som3E(2)],
-                    [
-                        PoolId::Som1E(1, 0),
-                        PoolId::Som1E(1, 1),
-                        PoolId::Som1E(1, 2),
-                    ],
+                    s3e,
                     cf,
                     net,
                     r_som1,
-                    elements,
-                    ledger,
                 );
             }
         }
-        ledger.commit(state);
     }
 }

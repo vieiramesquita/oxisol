@@ -49,27 +49,40 @@ oxisol/
 
 ---
 
-## Measured Hardware Performance (Test Host: AMD Ryzen 7 5700X, 8C/16T)
+## Oxisol vs. Legacy CENTURY — Benchmarks & Scientific Parity
+
+> **Full report & 17-biome breakdown:** see [`BENCHMARKS.md`](BENCHMARKS.md).
+
+![Oxisol vs. Legacy CENTURY Throughput Benchmark](docs/assets/benchmark_throughput.svg)
 
 Full continental US VEMAP spinup (**3,168 cells × 1,000 years = 38.0 million cell-months**) and 99-year historical transient run (**1895–1993** from lossless checkpoint with `pptT3.nc`/`tnT3.nc`/`txT3.nc` + `co2.dat`):
 
 | Engine / Mode | Precision | Threads | Wall Time | Throughput | Speedup vs. Legacy |
 |---|---:|---:|---:|---:|---:|
 | Legacy 1990s Fortran/C (`gfortran -O2`) | `f32` | 1 | 154.5 s *(extrapolated)* | 20,500 cell-yr/s | 1.00× |
-| `oxisol` Serial (`run_grid_serial`) | `f32` | 1 | ~73.3 s | **43,225 cell-yr/s** | **2.11×** |
-| `oxisol` Parallel (`rayon`, `VemapV45Parity`) | `f32` | 16 | **10.92 s** | **290,200 cell-yr/s** (`3.48M cell-mo/s`) | **14.16×** |
-| `oxisol` Parallel (`rayon`, `ScientificClean`) | `f64` | 16 | **11.64 s** | **272,253 cell-yr/s** (`3.27M cell-mo/s`) | **13.28×** |
+| `oxisol` Serial (`run_grid_serial`) | `f32` | 1 | ~71.2 s | **44,495 cell-yr/s** | **2.17×** |
+| `oxisol` Parallel (`rayon`, `VemapV45Parity`) | `f32` | 16 | **10.87 s** | **291,420 cell-yr/s** (`3.50M cell-mo/s`) | **14.22×** |
+| `oxisol` Parallel (`rayon`, `ScientificClean`) | `f64` | 16 | **12.34 s** | **256,840 cell-yr/s** (`3.08M cell-mo/s`) | **12.53×** |
 | `oxisol` Transient (`1895–1993`, 99 yr) | `f64` | 16 | **1.19 s** | **264,148 cell-yr/s** (`3.17M cell-mo/s`) | — |
-| `oxisol-grid` SIMD `f32x8` SOM kernel | `f32` | 1 | — | **7.88M cell-yr/s** (`94.60M cell-mo/s`) | — |
+| `oxisol-grid` SIMD `f32x8` SOM kernel | `f32` | 1 | — | **8.88M cell-yr/s** (`106.59M cell-mo/s`) | — |
 
 On production servers, compile with `RUSTFLAGS="-C target-cpu=native"` and pass `--threads <N> --chunk-size 32`.
 
 ---
 
-## Continental Validation Summary
+## Continental Validation Summary (`R² = 0.9756` across 3,168 Cells × 1,000 yr)
 
-- **Tier A (3,168 cells × 1,000 yr vs. archived VEMAP `site.nc`):** All **17/17 biomes** within `0.1%–22.4%` median `somsc` difference; continental mean `somsc` **`4,134.9` vs. `4,231.8 g C/m²`** (`-2.29%`, median rel diff **`6.08%`**), `som3c` **`1,635.3` vs. `1,636.9`** (`-0.09%`), `som1c_soil` **`119.5` vs. `120.0`** (`-0.38%`), `minerl_n0` **`0.609` vs. `0.616 g N/m²`**, `asmos0` **`3.436` vs. `3.397 cm`** (`1.52%` median diff).
+![Oxisol vs. CENTURY V4.5 Scientific Parity Across 17 Biomes](docs/assets/benchmark_parity.svg)
+
+- **Tier A (3,168 cells × 1,000 yr vs. archived CENTURY V4.5 `site.nc`):**
+  - **Total SOM (`somsc`):** **`4,134.9` vs. `4,231.8 g C/m²`** (**$r = 0.9877$, $R^2 = 0.9756$**, `-2.29%` mean diff, median rel diff **`6.08%`**)
+  - **Slow SOM (`som2c`):** **`2,380.1` vs. `2,474.9 g C/m²`** (**$r = 0.9889$, $R^2 = 0.9779$**)
+  - **Passive SOM (`som3c`):** **`1,635.3` vs. `1,636.9 g C/m²`** (**$r = 0.9864$, $R^2 = 0.9731$**, **`-0.09%`** mean diff)
+  - **Active SOM (`som1c_soil`):** **`119.5` vs. `120.0 g C/m²`** (**$r = 0.9763$, $R^2 = 0.9531$**, **`-0.38%`** mean diff)
+  - **Forest Wood (`rlwodc`):** **`3,806.0` vs. `3,656.9 g C/m²`** (**$r = 0.9786$, $R^2 = 0.9576$**)
+  - **Surface Mineral N & Soil Water:** `minerl_n0` **`0.609` vs. `0.616 g N/m²`** (`-1.14%`), `asmos0` **`3.436` vs. `3.397 cm`** (**`1.52%`** median diff).
 - **Tier B Perturbations & Invariants:** **5/5** directional agreement vs. black-box oracle (`CULT P`, `FERT+OMAD`, `IRRI A50`, `FIRE H`, `DRAIN=0.2`), plus strict `< 1e-10 g/m²` C/N/P/S mass conservation across all 9 disturbances, P/S geochemistry, C-14 isotopes, and extreme climates/soils.
+- See [`BENCHMARKS.md`](BENCHMARKS.md) for the full 17-biome table and the list of legacy 1990s bugs eliminated in `ScientificClean`.
 
 ---
 

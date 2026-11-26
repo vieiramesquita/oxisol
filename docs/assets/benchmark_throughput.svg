@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 390" width="880" height="390">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b0f17"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="gRust" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="gRust64" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="g1T" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+  </defs>
+  <rect width="880" height="390" rx="14" fill="url(#bg)" stroke="#233044" stroke-width="1.5"/>
+  <text x="32" y="42" fill="#e6edf3" font-family="Inter,Segoe UI,sans-serif" font-size="19" font-weight="700">Oxisol vs. Legacy CENTURY (gfortran -O2) — Continental US Throughput</text>
+  <text x="32" y="64" fill="#8b9bb4" font-family="Inter,Segoe UI,sans-serif" font-size="12.5">3,168 VEMAP cells × 1,000 years (38.0 million cell-months) · Measured on an 8-core / 16-thread test host</text>
+
+  <line x1="255" y1="90" x2="255" y2="320" stroke="#334155" stroke-width="1"/>
+  <line x1="415" y1="90" x2="415" y2="320" stroke="#1e293b" stroke-dasharray="3,3"/>
+  <line x1="575" y1="90" x2="575" y2="320" stroke="#1e293b" stroke-dasharray="3,3"/>
+  <line x1="735" y1="90" x2="735" y2="320" stroke="#1e293b" stroke-dasharray="3,3"/>
+
+  <text x="242" y="124" text-anchor="end" fill="#cbd5e1" font-family="Inter,Segoe UI,sans-serif" font-size="13" font-weight="600">Legacy CENTURY (gfortran -O2, 1T)</text>
+  <text x="242" y="140" text-anchor="end" fill="#64748b" font-family="monospace" font-size="11">f32 · ~154.5s wall time</text>
+  <rect x="255" y="108" width="37" height="34" rx="5" fill="#475569"/>
+  <text x="302" y="130" fill="#94a3b8" font-family="monospace" font-size="13" font-weight="700">20,500 cell-yr/s  (1.00×)</text>
+
+  <text x="242" y="182" text-anchor="end" fill="#e6edf3" font-family="Inter,Segoe UI,sans-serif" font-size="13" font-weight="600">Oxisol Serial (Rust, 1T)</text>
+  <text x="242" y="198" text-anchor="end" fill="#f59e0b" font-family="monospace" font-size="11">f32 · 2.17× faster on 1 core</text>
+  <rect x="255" y="166" width="80" height="34" rx="5" fill="url(#g1T)"/>
+  <text x="345" y="188" fill="#fbbf24" font-family="monospace" font-size="13" font-weight="700">44,495 cell-yr/s  (2.17×)</text>
+
+  <text x="242" y="240" text-anchor="end" fill="#e6edf3" font-family="Inter,Segoe UI,sans-serif" font-size="13" font-weight="600">Oxisol Parallel (ScientificClean f64)</text>
+  <text x="242" y="256" text-anchor="end" fill="#38bdf8" font-family="monospace" font-size="11">16T · 12.34s wall time (full f64)</text>
+  <rect x="255" y="224" width="461" height="34" rx="5" fill="url(#gRust64)"/>
+  <text x="726" y="246" fill="#38bdf8" font-family="monospace" font-size="13" font-weight="700">256,840  (12.5×)</text>
+
+  <text x="242" y="298" text-anchor="end" fill="#e6edf3" font-family="Inter,Segoe UI,sans-serif" font-size="13" font-weight="600">Oxisol Parallel (VemapV45Parity f32)</text>
+  <text x="242" y="314" text-anchor="end" fill="#10b981" font-family="monospace" font-size="11">16T · 10.87s wall time (3.50M mo/s)</text>
+  <rect x="255" y="282" width="523" height="34" rx="5" fill="url(#gRust)"/>
+  <text x="786" y="304" fill="#10b981" font-family="monospace" font-size="13" font-weight="700">291,420</text>
+  <text x="786" y="318" fill="#10b981" font-family="monospace" font-size="11.5" font-weight="700">(14.22×)</text>
+
+  <rect x="32" y="340" width="816" height="32" rx="7" fill="#17202d" stroke="#233044"/>
+  <text x="440" y="360" text-anchor="middle" fill="#cbd5e1" font-family="monospace" font-size="11.5">Standalone 1T SIMD f32x8 SOM kernel: 8.88M cell-yr/s (106.6M cell-mo/s) · Zero unsafe code · MIT License</text>
+</svg>

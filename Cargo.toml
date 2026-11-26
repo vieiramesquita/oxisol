@@ -1,10 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/century-core",
-    "crates/century-io",
-    "crates/century-grid",
-    "crates/century-cli",
+    "crates/oxisol-core",
+    "crates/oxisol-io",
+    "crates/oxisol-grid",
+    "crates/oxisol-web",
+    "crates/oxisol-cli",
 ]
 
 [workspace.package]
@@ -12,15 +13,18 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 license = "MIT"
-repository = "https://github.com/century-rs/century-rs"
-authors = ["century-rs Contributors"]
+repository = "https://github.com/oxisol/oxisol"
+authors = ["Oxisol Contributors"]
 keywords = ["biogeochemistry", "soil-organic-matter", "century", "ecology", "simulation"]
 categories = ["science", "simulation"]
 
 [workspace.dependencies]
-century-core = { path = "crates/century-core" }
-century-io = { path = "crates/century-io" }
-century-grid = { path = "crates/century-grid" }
+oxisol-core = { path = "crates/oxisol-core" }
+oxisol-io = { path = "crates/oxisol-io" }
+oxisol-grid = { path = "crates/oxisol-grid" }
+oxisol-web = { path = "crates/oxisol-web" }
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"

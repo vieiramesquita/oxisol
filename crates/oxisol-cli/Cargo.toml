@@ -1,0 +1,22 @@
+[package]
+name = "oxisol-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for running, validating, and benchmarking oxisol simulations."
+
+[[bin]]
+name = "oxisol"
+path = "src/main.rs"
+
+[dependencies]
+oxisol-core.workspace = true
+oxisol-io.workspace = true
+oxisol-grid.workspace = true
+oxisol-web.workspace = true
+tokio.workspace = true
+clap.workspace = true
+serde.workspace = true
+wide.workspace = true

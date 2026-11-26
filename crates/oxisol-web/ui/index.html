@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Oxisol Studio — High-Performance Biogeochemical Engine</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">OX</div>
+      <div>
+        <div class="brand-title">Oxisol <span class="badge-studio">STUDIO</span></div>
+        <div class="brand-sub" data-i18n="brand_sub">Open-Source CENTURY-like Biogeochemical Engine in Rust (C · N · P · S)</div>
+      </div>
+    </div>
+
+    <nav class="nav-tabs" role="tablist">
+      <button class="nav-tab active" data-tab="lab" data-i18n="tab_lab">Scenario Lab</button>
+      <button class="nav-tab" data-tab="grid" data-i18n="tab_grid">Spatial Grid &amp; HPC</button>
+      <button class="nav-tab" data-tab="api" data-i18n="tab_api">REST API &amp; Docs</button>
+    </nav>
+
+    <div class="topbar-right">
+      <div class="hw-pill" id="hw-pill">Detecting CPU...</div>
+      <div class="lang-switch" aria-label="Language">
+        <button id="lang-en" class="lang-btn active">EN</button>
+        <button id="lang-pt" class="lang-btn">PT-BR</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- ==================== TAB 1: SCENARIO LAB ==================== -->
+    <section id="panel-lab" class="panel active">
+      <div class="lab-layout">
+        <aside class="sidebar">
+          <div class="card control-card">
+            <h3 data-i18n="sec_preset">Ecosystem Preset</h3>
+            <select id="preset-select" class="input-select"></select>
+            <p id="preset-desc" class="muted-note"></p>
+          </div>
+
+          <div class="card control-card">
+            <h3 data-i18n="sec_climate">Climate &amp; Atmosphere</h3>
+            <div class="ctrl-row">
+              <label><span data-i18n="lbl_temp">Mean Annual Temp</span> <strong id="val-temp">10.5 °C</strong></label>
+              <input id="in-temp" type="range" min="-8" max="30" step="0.5" value="10.5" />
+            </div>
+            <div class="ctrl-row">
+              <label><span data-i18n="lbl_amp">Seasonal Amplitude</span> <strong id="val-amp">13.5 °C</strong></label>
+              <input id="in-amp" type="range" min="1" max="22" step="0.5" value="13.5" />
+            </div>
+            <div class="ctrl-row">
+              <label><span data-i18n="lbl_precip">Annual Precip</span> <strong id="val-precip">58 cm</strong></label>
+              <input id="in-precip" type="range" min="10" max="260" step="2" value="58" />
+            </div>
+            <div class="ctrl-row">
+              <label><span data-i18n="lbl_lat">Latitude (+N / −S)</span> <strong id="val-lat">40.8°</strong></label>
+              <input id="in-lat" type="range" min="-55" max="68" step="0.5" value="40.8" />
+            </div>
+            <div class="ctrl-grid-2">
+              <div>
+                <label class="small-lbl" data-i18n="lbl_co2_start">CO₂ Start (ppm)</label>
+                <input id="in-co2-start" type="number" class="input-num" min="250" max="1000" step="10" value="350" />
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="lbl_co2_end">CO₂ End (ppm)</label>
+                <input id="in-co2-end" type="number" class="input-num" min="250" max="1000" step="10" value="350" />
+              </div>
+            </div>
+          </div>
+
+          <div class="card control-card">
+            <h3 data-i18n="sec_soil">Soil Properties</h3>
+            <div class="ctrl-row">
+              <label><span data-i18n="lbl_sand">Sand</span> <strong id="val-sand">42%</strong></label>
+              <input id="in-sand" type="range" min="5" max="90" step="1" value="42" />
+            </div>
+            <div class="ctrl-row">
+              <label><span data-i18n="lbl_clay">Clay</span> <strong id="val-clay">22%</strong></label>
+              <input id="in-clay" type="range" min="5" max="80" step="1" value="22" />
+            </div>
+            <div class="texture-bar" id="texture-bar"></div>
+            <div class="ctrl-grid-2">
+              <div>
+                <label class="small-lbl" data-i18n="lbl_ph">Soil pH</label>
+                <input id="in-ph" type="number" class="input-num" min="4.0" max="8.8" step="0.1" value="6.8" />
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="lbl_bulkd">Bulk Density</label>
+                <input id="in-bulkd" type="number" class="input-num" min="0.8" max="1.8" step="0.02" value="1.32" />
+              </div>
+            </div>
+            <div class="ctrl-row">
+              <label><span data-i18n="lbl_rock">Rock Fraction</span> <strong id="val-rock">5%</strong></label>
+              <input id="in-rock" type="range" min="0" max="75" step="1" value="5" />
+            </div>
+            <div class="ctrl-row">
+              <label><span data-i18n="lbl_drain">Drainage (Anaerobic → Well)</span> <strong id="val-drain">1.00</strong></label>
+              <input id="in-drain" type="range" min="0.1" max="1.0" step="0.05" value="1.0" />
+            </div>
+          </div>
+
+          <div class="card control-card">
+            <h3 data-i18n="sec_mgmt">Land Management</h3>
+            <div class="ctrl-row">
+              <label class="small-lbl" data-i18n="lbl_tillage">Tillage &amp; Harvest</label>
+              <select id="in-tillage" class="input-select">
+                <option value="none" data-i18n="opt_till_none">Natural (No Harvest)</option>
+                <option value="no_till_harvest" data-i18n="opt_till_notill">No-Till + Harvest</option>
+                <option value="moldboard_plow" data-i18n="opt_till_plow">Moldboard Plow + Harvest</option>
+              </select>
+            </div>
+            <div class="ctrl-grid-2">
+              <div>
+                <label class="small-lbl" data-i18n="lbl_fert_n">Fert N (g/m²/yr)</label>
+                <input id="in-fert-n" type="number" class="input-num" min="0" max="40" step="1" value="0" />
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="lbl_fert_p">Fert P (g/m²/yr)</label>
+                <input id="in-fert-p" type="number" class="input-num" min="0" max="15" step="0.5" value="0" />
+              </div>
+            </div>
+            <div class="ctrl-grid-2">
+              <div>
+                <label class="small-lbl" data-i18n="lbl_irri">Irrigation</label>
+                <select id="in-irri" class="input-select">
+                  <option value="none" data-i18n="opt_irri_none">Rainfed</option>
+                  <option value="auto75" data-i18n="opt_irri_auto">Auto 75% AWHC</option>
+                </select>
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="lbl_fire">Fire Return (yr)</label>
+                <input id="in-fire" type="number" class="input-num" min="0" max="50" step="1" value="0" />
+              </div>
+            </div>
+            <div class="ctrl-grid-2">
+              <div>
+                <label class="small-lbl" data-i18n="lbl_graz">Grazing (0–0.6)</label>
+                <input id="in-graz" type="number" class="input-num" min="0" max="0.6" step="0.05" value="0.1" />
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="lbl_omad">Compost C (g/m²)</label>
+                <input id="in-omad" type="number" class="input-num" min="0" max="600" step="25" value="0" />
+              </div>
+            </div>
+          </div>
+
+          <div class="card control-card">
+            <h3 data-i18n="sec_solver">Solver &amp; Horizon</h3>
+            <div class="ctrl-row">
+              <label><span data-i18n="lbl_years">Simulation Years</span> <strong id="val-years">200 yr</strong></label>
+              <input id="in-years" type="range" min="20" max="1000" step="10" value="200" />
+            </div>
+            <div class="ctrl-grid-3">
+              <div>
+                <label class="small-lbl" data-i18n="lbl_elem">Cycles</label>
+                <select id="in-elem" class="input-select">
+                  <option value="cnps">C·N·P·S</option>
+                  <option value="cnp">C·N·P</option>
+                  <option value="cn">C·N</option>
+                </select>
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="lbl_prec">Float</label>
+                <select id="in-prec" class="input-select">
+                  <option value="f64">f64</option>
+                  <option value="f32">f32</option>
+                </select>
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="lbl_prof">Profile</label>
+                <select id="in-prof" class="input-select">
+                  <option value="clean">Clean</option>
+                  <option value="parity">V4.5</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <div class="workspace">
+          <div class="action-bar">
+            <button id="btn-run" class="btn btn-primary" data-i18n="btn_run">Run Simulation</button>
+            <button id="btn-pin" class="btn btn-secondary" data-i18n="btn_pin">Pin as Baseline (A)</button>
+            <button id="btn-clear-pin" class="btn btn-ghost" style="display:none;" data-i18n="btn_clear_pin">Clear Baseline</button>
+            <div class="spacer"></div>
+            <button id="btn-export-csv" class="btn btn-ghost" data-i18n="btn_csv">Export CSV</button>
+            <button id="btn-export-json" class="btn btn-ghost" data-i18n="btn_json">Export JSON</button>
+          </div>
+
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="kpi_somsc">Total Soil Carbon (SOMSC)</div>
+              <div class="kpi-val" id="kpi-somsc">—</div>
+              <div class="kpi-sub" id="kpi-somsc-delta">g C / m²</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="kpi_npp">Annual NPP</div>
+              <div class="kpi-val" id="kpi-npp">—</div>
+              <div class="kpi-sub" id="kpi-npp-delta">g C / m² / yr</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="kpi_aet">Actual ET (AET)</div>
+              <div class="kpi-val" id="kpi-aet">—</div>
+              <div class="kpi-sub" id="kpi-aet-delta">cm / yr</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="kpi_minn">Profile Mineral N</div>
+              <div class="kpi-val" id="kpi-minn">—</div>
+              <div class="kpi-sub" id="kpi-minn-delta">g N / m²</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="kpi_mb">Mass Balance Residual</div>
+              <div class="kpi-val kpi-ok" id="kpi-mb">—</div>
+              <div class="kpi-sub" data-i18n="kpi_mb_sub">Exact C·N·P·S Audit</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="kpi_speed">Engine Speed</div>
+              <div class="kpi-val" id="kpi-speed">—</div>
+              <div class="kpi-sub" id="kpi-speed-sub">cell-yr/s</div>
+            </div>
+          </div>
+
+          <div class="charts-grid">
+            <div class="card chart-card">
+              <div class="card-head">
+                <h4 data-i18n="chart_som_title">Soil Organic Carbon Pools (g C/m²)</h4>
+                <div class="legend" id="legend-som"></div>
+              </div>
+              <div id="chart-som" class="chart-host"></div>
+            </div>
+
+            <div class="card chart-card">
+              <div class="card-head">
+                <h4 data-i18n="chart_flux_title">Ecosystem Fluxes: NPP, Respiration &amp; Water</h4>
+                <div class="legend" id="legend-flux"></div>
+              </div>
+              <div id="chart-flux" class="chart-host"></div>
+            </div>
+
+            <div class="card chart-card">
+              <div class="card-head">
+                <h4 data-i18n="chart_bio_title">Vegetation Carbon &amp; Surface Mineral Nutrients</h4>
+                <div class="legend" id="legend-bio"></div>
+              </div>
+              <div id="chart-bio" class="chart-host"></div>
+            </div>
+
+            <div class="card chart-card">
+              <div class="card-head">
+                <h4 data-i18n="chart_diag_title">Live Biogeochemical Pool Architecture</h4>
+                <span class="pill-mini" id="diag-co2-pill">350 ppm CO₂</span>
+              </div>
+              <div id="pool-diagram" class="diagram-host"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 2: SPATIAL GRID & HPC ==================== -->
+    <section id="panel-grid" class="panel">
+      <div class="grid-layout">
+        <aside class="sidebar">
+          <div class="card control-card">
+            <h3 data-i18n="grid_cfg_title">Spatial Grid Configuration</h3>
+            <div class="ctrl-row">
+              <label class="small-lbl" data-i18n="grid_source">Grid Source</label>
+              <select id="grid-source" class="input-select">
+                <option value="synthetic" data-i18n="grid_opt_synth">Built-in Continental Gradient Grid</option>
+                <option value="attached" id="opt-attached-grid" disabled data-i18n="grid_opt_attached">Attached VEMAP / Spatial Dataset (--data-dir)</option>
+              </select>
+            </div>
+            <div class="ctrl-grid-2" id="synth-dims">
+              <div>
+                <label class="small-lbl" data-i18n="grid_rows">Rows</label>
+                <input id="grid-rows" type="number" class="input-num" min="6" max="48" value="24" />
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="grid_cols">Cols</label>
+                <input id="grid-cols" type="number" class="input-num" min="8" max="64" value="48" />
+              </div>
+            </div>
+            <div class="ctrl-row">
+              <label><span data-i18n="grid_years">Years / Cell</span> <strong id="val-grid-years">100 yr</strong></label>
+              <input id="grid-years" type="range" min="10" max="500" step="10" value="100" />
+            </div>
+            <div class="ctrl-grid-2">
+              <div>
+                <label class="small-lbl" data-i18n="grid_threads">Worker Threads</label>
+                <input id="grid-threads" type="number" class="input-num" min="1" max="256" value="8" />
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="grid_chunk">Chunk Size</label>
+                <input id="grid-chunk" type="number" class="input-num" min="1" max="128" value="16" />
+              </div>
+            </div>
+            <div class="ctrl-grid-2">
+              <div>
+                <label class="small-lbl" data-i18n="lbl_prec">Float</label>
+                <select id="grid-prec" class="input-select">
+                  <option value="f64">f64</option>
+                  <option value="f32">f32</option>
+                </select>
+              </div>
+              <div>
+                <label class="small-lbl" data-i18n="lbl_prof">Profile</label>
+                <select id="grid-prof" class="input-select">
+                  <option value="clean">Clean</option>
+                  <option value="parity">V4.5</option>
+                </select>
+              </div>
+            </div>
+            <button id="btn-run-grid" class="btn btn-primary full-width" data-i18n="btn_run_grid">Run Parallel Grid</button>
+          </div>
+
+          <div class="card control-card">
+            <h3 data-i18n="grid_inspector">Cell Inspector</h3>
+            <p class="muted-note" id="cell-inspector-hint" data-i18n="grid_click_hint">Click any active cell on the map to inspect its biogeochemical state.</p>
+            <div id="cell-inspector-body" class="inspector-table"></div>
+          </div>
+        </aside>
+
+        <div class="workspace">
+          <div class="kpi-grid kpi-grid-5">
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="gkpi_cells">Active Cells × Years</div>
+              <div class="kpi-val" id="gkpi-cells">—</div>
+              <div class="kpi-sub" id="gkpi-source">—</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="gkpi_time">Wall Time</div>
+              <div class="kpi-val" id="gkpi-time">—</div>
+              <div class="kpi-sub" id="gkpi-threads">—</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="gkpi_rate">Measured Throughput</div>
+              <div class="kpi-val kpi-ok" id="gkpi-rate">—</div>
+              <div class="kpi-sub" id="gkpi-mo-rate">cell-mo/s</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="gkpi_epyc">AMD EPYC 128C Est.</div>
+              <div class="kpi-val" id="gkpi-epyc">—</div>
+              <div class="kpi-sub">cell-yr/s (256T)</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label" data-i18n="gkpi_mean_som">Mean Continental SOMSC</div>
+              <div class="kpi-val" id="gkpi-som">—</div>
+              <div class="kpi-sub" id="gkpi-npp">NPP: —</div>
+            </div>
+          </div>
+
+          <div class="card map-card">
+            <div class="card-head">
+              <h4 data-i18n="map_title">Interactive 2D Spatial Heatmap</h4>
+              <div class="map-toolbar">
+                <select id="map-layer" class="input-select compact">
+                  <option value="somsc">Total SOMSC (g C/m²)</option>
+                  <option value="som3c">Passive SOM3 (g C/m²)</option>
+                  <option value="rlwodc">Forest Large Wood (g C/m²)</option>
+                  <option value="npp">Annual NPP (g C/m²/yr)</option>
+                  <option value="aet">Annual AET (cm/yr)</option>
+                  <option value="soil_water_cm">Surface Soil Water (cm)</option>
+                  <option value="minerl_n">Surface Mineral N (g N/m²)</option>
+                  <option value="biome_id">Biome ID</option>
+                </select>
+                <button id="btn-grid-csv" class="btn btn-ghost compact" data-i18n="btn_csv">Export CSV</button>
+              </div>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="grid-canvas" width="960" height="480"></canvas>
+            </div>
+            <div class="colorbar-wrap">
+              <span id="cb-min">0</span>
+              <div class="colorbar"></div>
+              <span id="cb-max">100</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 3: REST API & DOCS ==================== -->
+    <section id="panel-api" class="panel">
+      <div class="api-grid">
+        <div class="card doc-card">
+          <h3 data-i18n="api_overview_title">Oxisol HTTP/JSON API</h3>
+          <p class="muted-note" data-i18n="api_overview_desc">
+            Oxisol Studio embeds an Axum REST API inside the single compiled Rust binary. Automate scenarios from Python, R, Julia, or GIS pipelines on local machines or remote AMD EPYC servers over SSH tunnels.
+          </p>
+          <div class="endpoint-list">
+            <div class="ep-item"><span class="method get">GET</span><code>/api/health</code><span data-i18n="ep_health">Liveness &amp; version check</span></div>
+            <div class="ep-item"><span class="method get">GET</span><code>/api/system</code><span data-i18n="ep_sys">Host CPU count, CellState L1d bytes &amp; attached grid</span></div>
+            <div class="ep-item"><span class="method get">GET</span><code>/api/presets</code><span data-i18n="ep_presets">6 calibrated ecosystem presets (EN/PT-BR)</span></div>
+            <div class="ep-item"><span class="method post">POST</span><code>/api/simulate</code><span data-i18n="ep_sim">Single-cell scenario trajectory + mass balance audit</span></div>
+            <div class="ep-item"><span class="method post">POST</span><code>/api/grid/run</code><span data-i18n="ep_grid">Lock-free multi-core spatial grid execution</span></div>
+          </div>
+          <h4 style="margin-top:1.25rem;" data-i18n="api_example_title">Quick Python Example</h4>
+          <pre class="code-box"><code>import requests
+
+preset = requests.get("http://127.0.0.1:8080/api/presets").json()[1]["defaults"]
+preset["years"] = 100
+preset["co2_end_ppm"] = 560.0
+
+res = requests.post("http://127.0.0.1:8080/api/simulate", json=preset).json()
+print("Final SOMSC:", res["final_pools"]["somsc"], "g C/m2")
+print("Mass Balance Err:", res["final_pools"]["max_mass_balance_err"])</code></pre>
+        </div>
+
+        <div class="card doc-card">
+          <h3 data-i18n="sys_card_title">Architecture &amp; Documentation</h3>
+          <div id="sys-meta" class="inspector-table"></div>
+          <h4 style="margin-top:1.25rem;" data-i18n="hpc_title">Running Remotely on AMD EPYC + 512 GB RAM</h4>
+          <pre class="code-box"><code># Compile natively for Zen 4 / Zen 5 AVX-512 on EPYC
+RUSTFLAGS="-C target-cpu=native" cargo build --release -p oxisol-cli
+
+# Launch headless Studio on EPYC with your spatial grid mounted
+./target/release/oxisol serve --host 127.0.0.1 --port 8080 --data-dir /data/grid
+
+# Access securely from your laptop via SSH tunnel
+ssh -L 8080:127.0.0.1:8080 user@epyc-server</code></pre>
+          <p class="muted-note" style="margin-top:0.85rem;" data-i18n="docs_pointer">
+            Full scientific documentation (mdBook) lives in <code>docs/src/</code> and API reference builds via <code>cargo doc --workspace --no-deps</code>. Released under the MIT License.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="tooltip" class="tooltip" style="display:none;"></div>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

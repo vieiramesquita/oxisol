@@ -1,0 +1,27 @@
+[book]
+title = "Oxisol Documentation"
+authors = ["Oxisol Contributors"]
+description = "Open-source, clean-room CENTURY-like biogeochemical ecosystem engine in Rust — User Guide, Scientific Reference, REST API, and HPC Architecture."
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "coal"
+preferred-dark-theme = "coal"
+mathjax-support = true
+git-repository-url = "https://github.com/oxisol/oxisol"
+edit-url-template = "https://github.com/oxisol/oxisol/edit/main/docs/{path}"
+site-url = "/oxisol/"
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 30
+use-boolean-and = true

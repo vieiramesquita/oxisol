@@ -26,7 +26,11 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Run unit, mass-balance, and Tier B integration tests
+      - name: Run unit, mass-balance, Tier B, and REST API tests
         run: cargo test --workspace
+      - name: Check Rustdoc (zero warnings)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --workspace --no-deps
       - name: Check release build
-        run: cargo build --release -p century-cli
+        run: cargo build --release -p oxisol-cli

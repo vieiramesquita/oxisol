@@ -3,7 +3,7 @@
 ## 1. Rationale
 While validating against the historical ORNL DAAC #820 VEMAP Version 4.5 gridded CENTURY model (1995–2001), seven well-defined behavioral differences and legacy implementation quirks were identified relative to the published CENTURY V4.0 scientific documentation (Metherell et al. 1993).
 
-To ensure `century-rs` delivers **modern, bug-free scientific precision** by default while still enabling **rigorous black-box parity auditing** against legacy VEMAP runs, all behavioral switches are isolated in a single explicit enum:
+To ensure `Oxisol` delivers **modern, bug-free scientific precision** by default while still enabling **rigorous black-box parity auditing** against legacy VEMAP runs, all behavioral switches are isolated in a single explicit enum:
 
 ```rust
 pub enum CompatibilityProfile {

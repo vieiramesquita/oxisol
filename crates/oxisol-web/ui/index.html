@@ -25,6 +25,7 @@
 
     <div class="topbar-right">
       <div class="hw-pill" id="hw-pill">Detecting CPU...</div>
+      <button id="btn-glossary" class="btn-gloss" data-i18n="btn_glossary" title="Acronyms &amp; Scientific Glossary">📖 Glossary</button>
       <div class="lang-switch" aria-label="Carbon Unit" title="Carbon unit (1 Mg C/ha = 100 g C/m²)">
         <button id="unit-mgha" class="lang-btn active">Mg C/ha</button>
         <button id="unit-gm2" class="lang-btn">g C/m²</button>
@@ -681,6 +682,31 @@ ssh -L 8080:127.0.0.1:8080 user@hpc-server</code></pre>
       </div>
     </section>
   </main>
+
+  <!-- ==================== GLOSSARY & ACRONYMS MODAL ==================== -->
+  <div id="glossary-modal" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="gloss-title">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3 id="gloss-title" data-i18n="gloss_title">Glossary &amp; Acronyms Dictionary</h3>
+          <p class="muted-note" style="margin-top:2px;" data-i18n="gloss_sub">Plain-language guide to biogeochemical, GIS, and HPC acronyms in Oxisol.</p>
+        </div>
+        <button id="btn-glossary-close" class="btn btn-ghost compact" aria-label="Close">✕</button>
+      </div>
+      <div class="gloss-toolbar">
+        <input id="gloss-search" type="text" class="input-num" placeholder="Search acronym (e.g. SOMSC, AET, COG, AWHC, L1d)..." />
+        <div class="gloss-cats" id="gloss-cats">
+          <button class="gloss-cat active" data-cat="all" data-i18n="gcat_all">All</button>
+          <button class="gloss-cat" data-cat="soil" data-i18n="gcat_soil">Soil &amp; Carbon</button>
+          <button class="gloss-cat" data-cat="climate" data-i18n="gcat_clim">Climate &amp; Plants</button>
+          <button class="gloss-cat" data-cat="mgmt" data-i18n="gcat_mgmt">Management</button>
+          <button class="gloss-cat" data-cat="gis" data-i18n="gcat_gis">GIS / Rasters</button>
+          <button class="gloss-cat" data-cat="hpc" data-i18n="gcat_hpc">Rust &amp; HPC</button>
+        </div>
+      </div>
+      <div id="gloss-list" class="gloss-grid"></div>
+    </div>
+  </div>
 
   <div id="tooltip" class="tooltip" style="display:none;"></div>
   <script src="/assets/app.js"></script>

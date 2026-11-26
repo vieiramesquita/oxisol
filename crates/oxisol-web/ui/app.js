@@ -120,6 +120,15 @@ const I18N = {
     api_example_title: "Quick Python Example",
     sys_card_title: "Architecture & Documentation",
     hpc_title: "Running Remotely on Modern High-Performance Servers",
+    btn_glossary: "📖 Glossary",
+    gloss_title: "Glossary & Acronyms Dictionary",
+    gloss_sub: "Plain-language guide to biogeochemical, GIS, and HPC acronyms in Oxisol.",
+    gcat_all: "All",
+    gcat_soil: "Soil & Carbon",
+    gcat_clim: "Climate & Plants",
+    gcat_mgmt: "Management",
+    gcat_gis: "GIS / Rasters",
+    gcat_hpc: "Rust & HPC",
     docs_pointer: "Full scientific documentation (mdBook) lives in docs/src/ and API reference builds via cargo doc --workspace --no-deps. Released under the MIT License."
   },
   pt: {
@@ -241,6 +250,15 @@ const I18N = {
     api_example_title: "Exemplo Rápido em Python",
     sys_card_title: "Arquitetura & Documentação",
     hpc_title: "Execução Remota em Servidores Modernos de Alto Desempenho",
+    btn_glossary: "📖 Siglas",
+    gloss_title: "Dicionário de Siglas & Glossário",
+    gloss_sub: "Guia direto em linguagem simples de todas as siglas biogeoquímicas, GIS e HPC do Oxisol.",
+    gcat_all: "Todas",
+    gcat_soil: "Solo & Carbono",
+    gcat_clim: "Clima & Plantas",
+    gcat_mgmt: "Manejo",
+    gcat_gis: "GIS / Rasters",
+    gcat_hpc: "Rust & HPC",
     docs_pointer: "A documentação científica completa (mdBook) está em docs/src/ e a referência de API é gerada via cargo doc --workspace --no-deps. Licença MIT."
   }
 };
@@ -1377,6 +1395,198 @@ async function runLulcSimulation() {
   }
 }
 
+// ==================== GLOSSARY & ACRONYMS (EN / PT-BR) ====================
+const GLOSSARY = [
+  { term: "SOMSC", cat: "soil", unit: "Mg C/ha · g C/m²",
+    full_en: "Soil Organic Matter Soil Carbon", full_pt: "Carbono Orgânico do Solo (MOS)",
+    en: "Total mineral-soil organic carbon (SOM1_soil + SOM2 + SOM3). Classic CENTURY models 0–20 cm; Oxisol also reports IPCC 0–30 cm and Deep 0–100 cm.",
+    pt: "Estoque total de carbono orgânico no solo mineral (SOM1 + SOM2 + SOM3). O CENTURY clássico modela 0–20 cm; o Oxisol também reporta 0–30 cm (IPCC) e 0–100 cm (Profundo)." },
+  { term: "ΔSOMSC", cat: "soil", unit: "Mg C/ha · t CO₂e/ha",
+    full_en: "Net Soil Carbon Change", full_pt: "Variação Líquida de Carbono do Solo",
+    en: "Final SOMSC minus post-spinup baseline SOMSC. Positive (+) = carbon sequestration; negative (−) = carbon loss.",
+    pt: "SOMSC final menos SOMSC inicial após spinup. Positivo (+) = sequestro de carbono; negativo (−) = perda de carbono." },
+  { term: "SOM1 / SOM2 / SOM3", cat: "soil", unit: "Mg C/ha",
+    full_en: "Active / Slow / Passive SOM Pools", full_pt: "Pools Ativo / Lento / Passivo da MOS",
+    en: "Three turnover fractions: Active microbes (~1 yr), Slow protected organic matter (~20–40 yr), and Passive mineral-bound carbon (~400–2,000 yr).",
+    pt: "Três frações de reciclagem: Ativa microbiana (~1 ano), Lenta protegida (~20–40 anos) e Passiva recalcitrante ligada à argila (~400–2.000 anos)." },
+  { term: "Mg C/ha", cat: "soil", unit: "1 Mg = 1 t = 100 g/m²",
+    full_en: "Megagrams of Carbon per Hectare", full_pt: "Megagramas (Toneladas) de Carbono por Hectare",
+    en: "Standard SI agronomy & IPCC unit (equal to t C/ha). Divide g C/m² by 100 to convert to Mg C/ha.",
+    pt: "Unidade padrão da agronomia e do IPCC (equivale a t C/ha). Basta dividir g C/m² por 100." },
+  { term: "t CO₂e/ha", cat: "soil", unit: "Mg C/ha × 3.667",
+    full_en: "Tons of CO₂ Equivalent per Hectare", full_pt: "Toneladas de CO₂ Equivalente por Hectare",
+    en: "Greenhouse-gas accounting unit obtained by multiplying Mg C/ha by molecular weight ratio 44/12 ≈ 3.667.",
+    pt: "Unidade de inventário de GEE/créditos de carbono: multiplica-se Mg C/ha por 44/12 ≈ 3,667." },
+  { term: "C · N · P · S", cat: "soil", unit: "g/m²",
+    full_en: "Carbon, Nitrogen, Phosphorus, Sulfur", full_pt: "Carbono, Nitrogênio, Fósforo e Enxofre",
+    en: "The four coupled biogeochemical nutrient cycles controlling plant growth and microbial mineralization/immobilization.",
+    pt: "Os quatro ciclos biogeoquímicos acoplados que regulam crescimento vegetal e mineralização/imobilização microbiana." },
+  { term: "DOC", cat: "soil", unit: "g C/m²",
+    full_en: "Dissolved Organic Carbon", full_pt: "Carbono Orgânico Dissolvido",
+    en: "Soluble organic carbon transported downward into subsoil horizons with percolating water.",
+    pt: "Carbono orgânico solúvel lixiviado verticalmente para horizontes mais profundos com a percolação da água." },
+  { term: "BulkD / BDOD", cat: "soil", unit: "g/cm³ (cg/cm³ SoilGrids)",
+    full_en: "Soil Bulk Density", full_pt: "Densidade Aparente do Solo",
+    en: "Dry soil mass per unit volume. SoilGrids stores integer cg/cm³ (e.g. 126 = 1.26 g/cm³), auto-scaled by Oxisol.",
+    pt: "Massa de solo seco por volume. O SoilGrids usa cg/cm³ (ex.: 126 = 1,26 g/cm³), convertido automaticamente pelo Oxisol." },
+  { term: "Minerl N", cat: "soil", unit: "g N/m²",
+    full_en: "Plant-Available Mineral Nitrogen", full_pt: "Nitrogênio Mineral Disponível",
+    en: "Inorganic N (NO₃⁻ + NH₄⁺) in soil layers directly accessible to roots and decomposers.",
+    pt: "Nitrogênio inorgânico (nitrato + amônio) disponível nas camadas de solo para absorção pelas raízes e microrganismos." },
+  { term: "Oxisol", cat: "soil", unit: "Soil Order",
+    full_en: "Weathered Tropical Soil (Latossolo)", full_pt: "Latossolo (Solo Tropical Intemperizado)",
+    en: "Deep, iron/aluminum-oxide-rich tropical soils covering much of the Cerrado and Amazon — namesake of this Rust engine.",
+    pt: "Solos tropicais profundos ricos em óxidos de ferro e alumínio (Cerrado e Amazônia) — inspiração do nome do projeto em Rust." },
+
+  { term: "NPP", cat: "climate", unit: "Mg C/ha/yr",
+    full_en: "Net Primary Production", full_pt: "Produtividade Primária Líquida",
+    en: "Net annual carbon fixed by vegetation (photosynthesis minus plant respiration).",
+    pt: "Carbono líquido fixado anualmente pelas plantas (fotossíntese menos respiração vegetal)." },
+  { term: "Resp (Rh)", cat: "climate", unit: "Mg C/ha/yr",
+    full_en: "Heterotrophic Soil Respiration", full_pt: "Respiração Heterotrófica do Solo",
+    en: "Annual CO₂ released by soil microbes decomposing litter, dead wood, and SOM.",
+    pt: "CO₂ liberado anualmente pela decomposição microbiana de serrapilheira, madeira morta e MOS." },
+  { term: "AET", cat: "climate", unit: "cm/yr (1 cm = 10 mm)",
+    full_en: "Actual Evapotranspiration", full_pt: "Evapotranspiração Real",
+    en: "Real water returned to the atmosphere via soil evaporation, canopy interception, and plant transpiration.",
+    pt: "Água efetivamente transferida à atmosfera por evaporação do solo, interceptação da copa e transpiração das plantas." },
+  { term: "PET", cat: "climate", unit: "cm/yr",
+    full_en: "Potential Evapotranspiration", full_pt: "Evapotranspiração Potencial",
+    en: "Atmospheric evaporative demand estimated from monthly Tmin, Tmax, and latitude (Linacre 1977).",
+    pt: "Demanda evaporativa da atmosfera calculada a partir de Tmin, Tmax e latitude (Linacre 1977)." },
+  { term: "AWHC / CAD", cat: "climate", unit: "cm",
+    full_en: "Available Water Holding Capacity", full_pt: "Capacidade de Água Disponível (CAD)",
+    en: "Root-zone water stored between Field Capacity and Permanent Wilting Point.",
+    pt: "Água retida na zona radicular entre a Capacidade de Campo e o Ponto de Murcha Permanente." },
+  { term: "DEFAC", cat: "climate", unit: "0..1",
+    full_en: "Decomposition Abiotic Factor", full_pt: "Fator Abiótico de Decomposição",
+    en: "Monthly multiplier combining soil temperature and moisture effects on microbial decay rates.",
+    pt: "Multiplicador mensal que combina temperatura e umidade do solo para acelerar ou frear a decomposição." },
+  { term: "ANERB", cat: "climate", unit: "0.3..1.0",
+    full_en: "Anaerobic Decomposition Factor", full_pt: "Fator de Anaerobiose",
+    en: "Reduces soil decay when poor drainage (DRAIN < 1) waterlogs warm soils.",
+    pt: "Reduz a taxa de decomposição quando solos quentes e mal drenados (DRAIN < 1) ficam encharcados." },
+  { term: "C3 / C4", cat: "climate", unit: "Photosynthesis",
+    full_en: "C3 vs. C4 Photosynthetic Pathway", full_pt: "Metabolismo Fotossintético C3 vs. C4",
+    en: "Cool-season plants (C3: wheat, soybean, forests) vs. heat-loving tropical grasses (C4: Urochloa, Panicum, maize, sugarcane).",
+    pt: "Plantas de clima ameno/florestas (C3: soja, trigo, árvores) vs. gramíneas tropicais de alta eficiência hídrica (C4: Brachiaria/Urochloa, Panicum, milho, cana)." },
+  { term: "Spinup", cat: "climate", unit: "years",
+    full_en: "Equilibrium Pre-Run", full_pt: "Período de Equilíbrio Inicial (Spinup)",
+    en: "Initial simulation years on baseline cover so SOM1/SOM2/SOM3 reach steady state before land-use or climate changes.",
+    pt: "Anos iniciais simulados na cobertura original para equilibrar os estoques de carbono antes de aplicar desmatamento ou aquecimento." },
+
+  { term: "CULT", cat: "mgmt", unit: "Event",
+    full_en: "Cultivation / Tillage", full_pt: "Preparo do Solo / Aração",
+    en: "Soil tillage (e.g. moldboard plow) that buries surface residues and temporarily boosts SOM decomposition.",
+    pt: "Revolvimento do solo (ex.: aração convencional) que incorpora palhada e acelera temporariamente a perda de MOS." },
+  { term: "FERT / AUFERT", cat: "mgmt", unit: "g/m²/yr",
+    full_en: "Fertilization / Auto-Fertilization", full_pt: "Adubação Mineral / Automática",
+    en: "Adds mineral N/P/S directly or tops up exact crop nutrient demand (AUFERT).",
+    pt: "Adição de N/P/S mineral ao solo ou reposição automática sob demanda da cultura (AUFERT)." },
+  { term: "OMAD", cat: "mgmt", unit: "g C/m²",
+    full_en: "Organic Matter Addition", full_pt: "Adição de Matéria Orgânica / Composto",
+    en: "Application of external organic inputs (manure, compost, mulch) into surface litter pools.",
+    pt: "Aplicação de esterco, composto ou resíduos orgânicos externos na superfície do solo." },
+  { term: "IRRI", cat: "mgmt", unit: "cm",
+    full_en: "Irrigation Event", full_pt: "Irrigação",
+    en: "Adds fixed water or auto-irrigates to maintain root-zone moisture (e.g. Auto 75% AWHC).",
+    pt: "Adiciona lâmina fixa ou irriga automaticamente para manter a umidade acima de 75% da CAD." },
+  { term: "FIRE", cat: "mgmt", unit: "Return yr",
+    full_en: "Prescribed Fire / Wildfire", full_pt: "Fogo Prescrito / Queimada",
+    en: "Consumes shoots and surface litter, returns ash nutrients, and shifts post-fire root:shoot allocation.",
+    pt: "Consome biomassa aérea e serrapilheira, retorna cinzas minerais e altera a partição raiz/parte aérea pós-fogo." },
+  { term: "GRAZ", cat: "mgmt", unit: "0..0.6",
+    full_en: "Grazing Intensity", full_pt: "Intensidade de Pastejo",
+    en: "Fraction of live pasture shoots removed by livestock, with partial return as feces and urine.",
+    pt: "Fração da forragem removida pelo rebanho, com retorno parcial ao solo via fezes e urina." },
+  { term: "HARV / TREM", cat: "mgmt", unit: "Event",
+    full_en: "Crop Harvest / Tree Removal", full_pt: "Colheita Agrícola / Corte Florestal",
+    en: "Exports grain/straw (HARV) or logs/thins woody canopy (TREM).",
+    pt: "Exportação de grãos/palha na colheita (HARV) ou desbaste/corte/incêndio de copa em florestas (TREM)." },
+
+  { term: "LULC / LUC", cat: "gis", unit: "Raster codes",
+    full_en: "Land Use & Land Cover / Land-Use Change", full_pt: "Uso e Cobertura da Terra / Mudança de Uso",
+    en: "Satellite-classified pixel maps (e.g. MapBiomas Col. 11: 3=Forest, 15=Pasture, 39=Soybean) and year-to-year conversions.",
+    pt: "Mapas de satélite por classe numérica (MapBiomas Col. 11: 3=Floresta, 15=Pastagem, 39=Soja) e suas transições ao longo dos anos." },
+  { term: "COG / GeoTIFF", cat: "gis", unit: ".tif",
+    full_en: "Cloud-Optimized GeoTIFF", full_pt: "GeoTIFF Otimizado para Nuvem (COG)",
+    en: "Georeferenced raster format with internal tiling and DEFLATE compression, ready for QGIS, Python, and GEE.",
+    pt: "Raster georreferenciado com blocos internos e compressão DEFLATE, pronto para abrir direto no QGIS, Python ou GEE." },
+  { term: "CRS / EPSG:4326", cat: "gis", unit: "Degrees",
+    full_en: "Coordinate Reference System (WGS84)", full_pt: "Sistema de Referência de Coordenadas (WGS84)",
+    en: "Geographic latitude/longitude coordinate system recommended for Oxisol input rasters.",
+    pt: "Sistema geográfico padrão em graus de latitude e longitude (WGS84) recomendado para os rasters do Oxisol." },
+  { term: "terrio", cat: "gis", unit: "Rust crate",
+    full_en: "Pure-Rust Geospatial I/O Library", full_pt: "Biblioteca Geoespacial em Rust Puro",
+    en: "Reads and writes GeoTIFF, COG, and NetCDF natively inside Oxisol with zero libgdal/PROJ C dependencies.",
+    pt: "Lê e grava GeoTIFF, COG e NetCDF nativamente dentro do Oxisol, sem precisar instalar GDAL ou PROJ em C." },
+  { term: "IPCC Tier 3", cat: "gis", unit: "0–30 cm",
+    full_en: "Process-Based GHG Inventory Method", full_pt: "Inventário de Carbono Baseado em Processos (IPCC)",
+    en: "Highest-rigor IPCC soil carbon accounting tier using dynamic mechanistic models (standard reporting depth 0–30 cm).",
+    pt: "Nível mais detalhado do IPCC usando modelos mecanísticos dinâmicos (camada padrão de reporte 0–30 cm)." },
+  { term: "VEMAP", cat: "gis", unit: "3,168 cells",
+    full_en: "Vegetation/Ecosystem Modeling & Analysis Project", full_pt: "Projeto Benchmark Continental VEMAP (EUA)",
+    en: "Historical 0.5° continental benchmark (17 biomes) used to validate Oxisol parity against CENTURY V4.5.",
+    pt: "Grade continental histórica de 0,5° (17 biomas) usada na validação cruzada do Oxisol contra o CENTURY V4.5." },
+
+  { term: "#![forbid(unsafe_code)]", cat: "hpc", unit: "Rust Safety",
+    full_en: "Zero Unsafe Code Guarantee", full_pt: "Proibição Total de Código Inseguro no Compilador",
+    en: "Compiler-enforced guarantee of zero raw pointers, zero segfaults, and zero parallel data races across all 5 Oxisol crates.",
+    pt: "Garantia verificada pelo compilador Rust de zero ponteiros crus, zero segfaults e zero data races em paralelismo." },
+  { term: "HPC", cat: "hpc", unit: "64–256T",
+    full_en: "High-Performance Computing", full_pt: "Computação de Alto Desempenho",
+    en: "Multi-core servers capable of running millions of spatial pixels in parallel via rayon.",
+    pt: "Servidores multi-núcleo capazes de simular milhões de pixels em paralelo via rayon." },
+  { term: "SIMD", cat: "hpc", unit: "f32x8 / f64x4",
+    full_en: "Single Instruction, Multiple Data", full_pt: "Instruções Vetoriais de CPU",
+    en: "Hardware CPU vector lanes (AVX2/AVX-512/NEON) processing 4–8 soil cells per clock instruction.",
+    pt: "Vetores de hardware na CPU que calculam 4 a 8 células de solo simultaneamente em uma única instrução." },
+  { term: "L1d Cache", cat: "hpc", unit: "~3–5.8 KiB",
+    full_en: "Level-1 Data Cache Residency", full_pt: "Memória Cache L1 de Dados da CPU",
+    en: "Fastest on-core CPU memory. Oxisol packs CellState into ~5.8 KiB (64B aligned) to stay inside L1d cache.",
+    pt: "Memória ultrarrápida dentro de cada núcleo. O estado de célula do Oxisol (~5,8 KiB) cabe inteiro no L1d." },
+  { term: "f64 / f32", cat: "hpc", unit: "Precision",
+    full_en: "64-bit vs. 32-bit Floating Point", full_pt: "Precisão Numérica Dupla (64-bit) vs. Simples (32-bit)",
+    en: "f64 (default) achieves < 1e-10 g/m² exact mass conservation; f32 matches legacy Fortran REAL*4 parity.",
+    pt: "f64 (padrão) garante balanço de massa exato < 1e-10 g/m²; f32 reproduz a precisão do Fortran antigo." },
+  { term: "REST API / CLI", cat: "hpc", unit: "HTTP / Shell",
+    full_en: "Programmatic Interfaces", full_pt: "Interfaces de Automação (API HTTP e Terminal)",
+    en: "Automate Oxisol via Python/R over HTTP (/api/simulate, /api/lulc/run) or headless terminal commands (oxisol raster).",
+    pt: "Automatize o Oxisol em Python/R via HTTP (/api/simulate, /api/lulc/run) ou via linha de comando (oxisol raster)." }
+];
+
+let activeGlossCat = "all";
+
+function renderGlossary() {
+  const host = $("gloss-list");
+  if (!host) return;
+  const q = ($("gloss-search").value || "").trim().toLowerCase();
+  const pt = state.lang === "pt";
+  const filtered = GLOSSARY.filter((g) => {
+    if (activeGlossCat !== "all" && g.cat !== activeGlossCat) return false;
+    if (!q) return true;
+    return (
+      g.term.toLowerCase().includes(q) ||
+      g.full_en.toLowerCase().includes(q) ||
+      g.full_pt.toLowerCase().includes(q) ||
+      g.en.toLowerCase().includes(q) ||
+      g.pt.toLowerCase().includes(q)
+    );
+  });
+  host.innerHTML = filtered.length
+    ? filtered.map((g) => `
+        <div class="gloss-item">
+          <div class="gloss-item-head">
+            <span class="gloss-term">${g.term}</span>
+            <span class="gloss-unit">${g.unit}</span>
+          </div>
+          <div class="gloss-full">${pt ? g.full_pt : g.full_en}</div>
+          <div class="gloss-desc">${pt ? g.pt : g.en}</div>
+        </div>
+      `).join("")
+    : `<p class="muted-note">${pt ? "Nenhuma sigla encontrada." : "No matching acronym found."}</p>`;
+}
+
 // ==================== INITIALIZATION ====================
 async function init() {
   // Tab switching
@@ -1392,11 +1602,37 @@ async function init() {
     });
   });
 
-  $("lang-en").addEventListener("click", () => applyLang("en"));
-  $("lang-pt").addEventListener("click", () => applyLang("pt"));
+  $("lang-en").addEventListener("click", () => { applyLang("en"); renderGlossary(); });
+  $("lang-pt").addEventListener("click", () => { applyLang("pt"); renderGlossary(); });
   $("unit-mgha").addEventListener("click", () => applyCarbonUnit("mgha"));
   $("unit-gm2").addEventListener("click", () => applyCarbonUnit("gm2"));
   syncUnitLabels();
+
+  // Glossary drawer controls
+  const glossModal = $("glossary-modal");
+  const openGloss = () => {
+    renderGlossary();
+    glossModal.style.display = "flex";
+    $("gloss-search").focus();
+  };
+  const closeGloss = () => { glossModal.style.display = "none"; };
+  $("btn-glossary").addEventListener("click", openGloss);
+  $("btn-glossary-close").addEventListener("click", closeGloss);
+  glossModal.addEventListener("click", (ev) => {
+    if (ev.target === glossModal) closeGloss();
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && glossModal.style.display !== "none") closeGloss();
+  });
+  $("gloss-search").addEventListener("input", renderGlossary);
+  document.querySelectorAll(".gloss-cat").forEach((b) => {
+    b.addEventListener("click", () => {
+      document.querySelectorAll(".gloss-cat").forEach((x) => x.classList.remove("active"));
+      b.classList.add("active");
+      activeGlossCat = b.getAttribute("data-cat") || "all";
+      renderGlossary();
+    });
+  });
 
   document.querySelectorAll('input[type="range"]').forEach((inp) => {
     inp.addEventListener("input", syncSliderLabels);

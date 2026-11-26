@@ -367,6 +367,91 @@ input[type="range"].range-styled::-moz-range-thumb {
   font-family: var(--mono); font-size: 12px; color: #c9d1d9; line-height: 1.55;
 }
 
+/* Glossary Button & Modal */
+.btn-gloss {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--emerald);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-gloss:hover { background: rgba(16, 185, 129, 0.24); }
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(5, 9, 15, 0.78);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+.modal-card {
+  width: min(980px, 96vw);
+  max-height: 86vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.15rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);
+}
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.modal-head h3 { font-size: 16px; color: var(--text); }
+.gloss-toolbar { display: flex; flex-direction: column; gap: 0.55rem; }
+.gloss-cats { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.gloss-cat {
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gloss-cat.active {
+  background: var(--emerald-dim);
+  color: var(--emerald);
+  border-color: rgba(16, 185, 129, 0.45);
+}
+.gloss-grid {
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  padding-right: 4px;
+}
+.gloss-item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0.65rem 0.8rem;
+}
+.gloss-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 3px;
+}
+.gloss-term { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--emerald); }
+.gloss-unit { font-family: var(--mono); font-size: 10.5px; color: var(--cyan); }
+.gloss-full { font-size: 11.5px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.gloss-desc { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+
 /* Tooltip */
 .tooltip {
   position: fixed; pointer-events: none; z-index: 90;

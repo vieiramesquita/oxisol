@@ -5,7 +5,7 @@
 [![Safe Rust](https://img.shields.io/badge/unsafe-forbidden-brightgreen.svg)](crates/oxisol-core/src/lib.rs)
 [![Docs](https://img.shields.io/badge/Docs-vieiramesquita.github.io%2Foxisol-06b6d4.svg)](https://vieiramesquita.github.io/oxisol/)
 
-**[Documentation Portal (`mdBook`)](https://vieiramesquita.github.io/oxisol/) · [Rust API Reference (`rustdoc`)](https://vieiramesquita.github.io/oxisol/api/oxisol_core/index.html) · [Benchmarks & Parity Report](BENCHMARKS.md)**
+**[Documentation Portal (`mdBook`)](https://vieiramesquita.github.io/oxisol/) · [Rust API Reference (`rustdoc`)](https://vieiramesquita.github.io/oxisol/api/oxisol_core/index.html) · [Benchmarks & Parity Report](BENCHMARKS.md) · [Spatial Raster Examples](examples/spatial_raster/README.md) · [Glossary & Acronyms](https://vieiramesquita.github.io/oxisol/glossary.html)**
 
 ---
 

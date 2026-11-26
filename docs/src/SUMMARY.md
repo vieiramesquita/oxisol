@@ -26,3 +26,4 @@
 - [Rust Engine & HPC Server Scaling](architecture/hpc-scaling.md)
 - [REST JSON API Reference](architecture/rest-api.md)
 - [Formal Clean-Room Specification Appendix](architecture/spec-appendix.md)
+- [Glossary & Acronyms Dictionary](glossary.md)

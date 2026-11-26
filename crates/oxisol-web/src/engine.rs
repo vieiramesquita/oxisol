@@ -83,11 +83,11 @@ fn execute_single_cell_typed<F: Float>(
         omad.astgc = f(req.omad_c.clamp(0.0, 1000.0));
     }
 
-    let lat = req.lat.clamp(-65.0, 70.0);
+    let lat = req.lat.clamp(-70.0, 75.0);
     let weather = build_synthetic_climate::<F>(
-        req.mean_temp_c.clamp(-12.0, 34.0),
-        req.temp_amp_c.clamp(0.5, 25.0),
-        req.annual_precip_cm.clamp(5.0, 350.0),
+        req.mean_temp_c.clamp(-20.0, 40.0),
+        req.temp_amp_c.clamp(0.5, 30.0),
+        req.annual_precip_cm.clamp(2.0, 800.0),
         lat,
     );
     let schedule = build_schedule_from_request(req, years);
@@ -102,12 +102,12 @@ fn execute_single_cell_typed<F: Float>(
         bulkd: f(req.bulkd.clamp(0.7, 1.9)),
         rock_frac: f(req.rock_frac.clamp(0.0, 0.85)),
         zminrl_cm: None,
-        ph: f(req.ph.clamp(4.0, 9.0)),
+        ph: f(req.ph.clamp(3.8, 9.2)),
         drain: f(req.drain.clamp(0.1, 1.0)),
     };
 
-    let co2_start = req.co2_start_ppm.clamp(200.0, 1200.0);
-    let co2_end = req.co2_end_ppm.clamp(200.0, 1200.0);
+    let co2_start = req.co2_start_ppm.clamp(180.0, 1500.0);
+    let co2_end = req.co2_end_ppm.clamp(180.0, 1500.0);
 
     let cfg = SimConfig {
         profile,

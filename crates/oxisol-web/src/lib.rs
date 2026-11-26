@@ -264,7 +264,7 @@ mod tests {
             .await
             .unwrap();
         let presets: Vec<crate::models::PresetSummary> = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(presets.len(), 6);
+        assert_eq!(presets.len(), 7);
     }
 
     #[tokio::test]

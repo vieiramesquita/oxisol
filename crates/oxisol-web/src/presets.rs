@@ -163,6 +163,21 @@ pub fn base_biome_params<F: Float>(preset_id: &str) -> RawBiomeParams<F> {
     };
     trees.insert(cerr.name.clone(), cerr);
 
+    // Tropical Evergreen Rainforest (Amazonian Oxisol / Latossolo)
+    let amaz = TreeParams::<F> {
+        name: "AMAZ".into(),
+        decid: 0,
+        prdx4: f(540.0),
+        ppdf: [f(27.5), f(45.0), f(1.0), f(3.5)],
+        leafdr: [f(0.035); 12],
+        wooddr: [f(0.035), f(0.035), f(0.007), f(0.0018), f(0.003)],
+        maxlai: f(12.0),
+        co2ipr: f(1.30),
+        co2itr: f(0.72),
+        ..Default::default()
+    };
+    trees.insert(amaz.name.clone(), amaz);
+
     // Standard CENTURY-compliant management options
     let mut cult = HashMap::new();
     cult.insert(
@@ -295,6 +310,16 @@ pub fn base_biome_params<F: Float>(preset_id: &str) -> RawBiomeParams<F> {
             site.aglcis = [f(110.0), F::ZERO];
             site.bglcis = [f(190.0), F::ZERO];
         }
+        "amazon_rainforest" => {
+            fix.varat2[0] = [f(22.0), f(12.0), f(2.0)];
+            site.som2ci = [f(2900.0), F::ZERO];
+            site.som3ci = [f(2100.0), F::ZERO];
+            site.rlvcis = [f(360.0), F::ZERO];
+            site.fbrcis = [f(650.0), F::ZERO];
+            site.rlwcis = [f(9500.0), F::ZERO];
+            site.frtcis = [f(320.0), F::ZERO];
+            site.crtcis = [f(2100.0), F::ZERO];
+        }
         "semiarid_shrubland" => {
             fix.vlossg = f(0.05);
             site.som2ci = [f(1000.0), F::ZERO];
@@ -320,9 +345,45 @@ pub fn base_biome_params<F: Float>(preset_id: &str) -> RawBiomeParams<F> {
     }
 }
 
-/// Return all 6 built-in calibrated ecosystem presets for `GET /api/presets`.
+/// Return all 7 built-in calibrated ecosystem presets for `GET /api/presets`.
 pub fn builtin_presets() -> Vec<PresetSummary> {
     vec![
+        PresetSummary {
+            id: "amazon_rainforest".into(),
+            name_en: "Amazon Tropical Rainforest (Clayey Oxisol)".into(),
+            name_pt: "Floresta Amazônica Tropical (Latossolo / Oxisol)".into(),
+            desc_en: "Humid equatorial evergreen rainforest on deeply weathered acidic Oxisol (3,100 mm/yr, 27 °C).".into(),
+            desc_pt: "Floresta equatorial úmida em Latossolo ácido profundo (3.100 mm/ano, 27 °C, 3,1°S).".into(),
+            system_kind: "forest".into(),
+            defaults: SimulateRequest {
+                preset_id: "amazon_rainforest".into(),
+                mean_temp_c: 27.0,
+                temp_amp_c: 1.5,
+                annual_precip_cm: 310.0,
+                lat: -3.1,
+                co2_start_ppm: 420.0,
+                co2_end_ppm: 560.0,
+                sand: 0.24,
+                silt: 0.16,
+                clay: 0.60,
+                bulkd: 1.15,
+                ph: 4.6,
+                rock_frac: 0.02,
+                drain: 1.0,
+                years: 250,
+                elements: "cnps".into(),
+                profile: "clean".into(),
+                precision: "f64".into(),
+                audit_mass_balance: true,
+                tillage: TillageMode::None,
+                fertilizer_n: 0.0,
+                fertilizer_p: 0.0,
+                irrigation: IrrigationMode::None,
+                fire_interval_yr: 0,
+                grazing_intensity: 0.0,
+                omad_c: 0.0,
+            },
+        },
         PresetSummary {
             id: "temperate_grassland".into(),
             name_en: "Temperate C3 Grassland (Great Plains)".into(),
@@ -552,6 +613,7 @@ pub fn build_schedule_from_request(req: &SimulateRequest, years: i32) -> Schedul
     let pre_spring = if sh { 9u8 } else { 3u8 };
 
     let (initial_system, initial_crop, initial_tree) = match req.preset_id.as_str() {
+        "amazon_rainforest" => (SystemKind::Forest, String::new(), "AMAZ".to_string()),
         "temperate_deciduous" => (SystemKind::Forest, String::new(), "TMDF".to_string()),
         "boreal_conifer" => (SystemKind::Forest, String::new(), "BORE".to_string()),
         "cerrado_savanna" => (SystemKind::Savanna, "C4GR".to_string(), "CERR".to_string()),
